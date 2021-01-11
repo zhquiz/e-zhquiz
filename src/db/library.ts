@@ -7,6 +7,7 @@ export interface IDbLibrary {
   entries: string[]
   description?: string
   tag?: string
+  source?: string
 }
 
 export class DbLibrary {
@@ -19,7 +20,8 @@ export class DbLibrary {
         createdAt   TIMESTAMP strftime('%s','now'),
         updatedAt   TIMESTAMP strftime('%s','now'),
         title       TEXT,
-        entries     JSON DEFAULT '[]'
+        entries     JSON DEFAULT '[]',
+        source      TEXT
       );
 
       CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
@@ -37,6 +39,34 @@ export class DbLibrary {
         tag
       );
     `)
+
+    const r = g.server.db
+      .prepare(
+        /* sql */ `
+      SELECT COUNT(*) FROM [${this.tableName}] WHERE source = 'zh'
+    `
+      )
+      .get()
+
+    if (!r) {
+      this.create(
+        ...g.server.zh
+          .prepare(
+            /* sql */ `
+        SELECT title, entries FROM library
+      `
+          )
+          .all()
+          .map((r) => ({
+            title: r.title as string,
+            entries: (r.entries as string)
+              .replace(/^\x1f/, '')
+              .replace(/\x1f$/, '')
+              .split(/\x1f/g),
+            source: 'zh'
+          }))
+      )
+    }
   }
 
   static create(...items: IDbLibrary[]) {
@@ -47,9 +77,10 @@ export class DbLibrary {
         id: string
         title: string
         entries: string
+        source: string | null
       }>(/* sql */ `
-        INSERT INTO [${this.tableName}] (id, title, entries)
-        VALUES (@id, @title, @entries)
+        INSERT INTO [${this.tableName}] (id, title, entries, source)
+        VALUES (@id, @title, @entries, @source)
       `)
 
       const stmtQ = g.server.db.prepare<{
@@ -75,7 +106,8 @@ export class DbLibrary {
         stmt.run({
           id,
           title: it.title,
-          entries: JSON.stringify(it.entries)
+          entries: JSON.stringify(it.entries),
+          source: it.source || null
         })
 
         stmtQ.run({
@@ -107,11 +139,13 @@ export class DbLibrary {
           id: string
           title: string
           entries: string
+          source: string
         }>(/* sql */ `
           UPDATE [${this.tableName}]
           SET ${[
             it.title ? 'title = @title' : '',
-            entries.length ? 'entries = @entries' : ''
+            entries.length ? 'entries = @entries' : '',
+            typeof it.source !== 'undefined' ? 'source = @source' : ''
           ]
             .filter((s) => s)
             .join(',')}
@@ -137,11 +171,12 @@ export class DbLibrary {
           WHERE id = @id
         `)
 
-        if (it.title || entries.length) {
+        if (it.title || entries.length || typeof it.source !== 'undefined') {
           stmt.run({
             id: it.id,
             title: it.title || '',
-            entries: JSON.stringify(entries)
+            entries: JSON.stringify(entries),
+            source: it.source || ''
           })
         }
 

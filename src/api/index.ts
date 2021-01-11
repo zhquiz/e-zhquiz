@@ -3,6 +3,8 @@ import { FastifyInstance } from 'fastify'
 import { g } from '../shared'
 import chineseRouter from './chinese'
 import extraRouter from './extra'
+import hanziRouter from './hanzi'
+import libraryRouter from './library'
 
 const apiRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
   f.addHook('preHandler', (req) => {
@@ -32,6 +34,12 @@ const apiRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
   })
   f.register(extraRouter, {
     prefix: '/extra'
+  })
+  f.register(hanziRouter, {
+    prefix: '/hanzi'
+  })
+  f.register(libraryRouter, {
+    prefix: '/library'
   })
 
   next()

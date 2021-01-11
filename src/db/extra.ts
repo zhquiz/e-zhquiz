@@ -92,7 +92,7 @@ export class DbExtra {
           chinese: it.chinese,
           pinyin,
           english: it.english || '',
-          type: it.type || '',
+          type: it.type || 'vocab',
           description: it.description || '',
           tag: it.tag || ''
         })

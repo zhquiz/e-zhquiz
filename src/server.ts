@@ -1,6 +1,7 @@
 import { spawnSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
+import qs from 'querystring'
 
 import sqlite from 'better-sqlite3'
 import ON_DEATH from 'death'
@@ -8,6 +9,7 @@ import fastify, { FastifyInstance } from 'fastify'
 import SecureSessionPlugin from 'fastify-secure-session'
 import fastifyStatic from 'fastify-static'
 import pino from 'pino'
+import rison from 'rison-node'
 
 import apiRouter from './api'
 import { Database } from './db'
@@ -31,10 +33,28 @@ export class Server implements IServerOptions, IServerAssets {
     const db = sqlite(path.join(opts.userDataDir, 'data.db'))
 
     const logger = pino(
-      fs.createWriteStream(path.join(opts.userDataDir, 'server.log'))
+      {
+        prettyPrint: true
+      }
+      // fs.createWriteStream(path.join(opts.userDataDir, 'server.log'))
     )
     const app = fastify({
-      logger
+      logger,
+      querystringParser: (s) => {
+        const q = qs.parse(s)
+        if (typeof q._ === 'string') {
+          q._ = rison.decode(q._)
+        }
+
+        return q
+      }
+    })
+
+    app.addHook('preHandler', (req, reply, done) => {
+      if (req.body) {
+        req.log.info({ body: req.body }, 'parsed body')
+      }
+      done()
     })
 
     const sessionKey = path.join(opts.assetsDir, 'session-key')
