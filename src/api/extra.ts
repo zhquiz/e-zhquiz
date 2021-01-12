@@ -329,7 +329,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const [r] = DbExtra.create(req.body)
 
         return {
-          id: r.entry.id
+          id: r!.entry.id
         }
       }
     )

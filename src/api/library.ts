@@ -113,7 +113,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const [r] = DbLibrary.create(req.body)
 
         return {
-          id: r.entry.id
+          id: r!.entry.id
         }
       }
     )

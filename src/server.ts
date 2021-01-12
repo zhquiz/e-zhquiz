@@ -50,7 +50,7 @@ export class Server implements IServerOptions, IServerAssets {
       }
     })
 
-    app.addHook('preHandler', (req, reply, done) => {
+    app.addHook('preHandler', (req, _, done) => {
       if (req.body) {
         req.log.info({ body: req.body }, 'parsed body')
       }

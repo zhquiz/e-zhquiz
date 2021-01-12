@@ -20,7 +20,7 @@ export interface IDbQuiz {
   english?: string
   type: string
   direction: string
-  isExtra: boolean
+  source: string
   description?: string
   tag?: string
   srsLevel?: number
@@ -45,7 +45,7 @@ export class DbQuiz {
         [entry]     TEXT NOT NULL,
         [type]      TEXT NOT NULL,
         direction   TEXT NOT NULL,
-        isExtra     INT,
+        source      TEXT,           -- isExtra or not
         srsLevel    INT,
         nextReview  TIMESTAMP,
         lastRight   TIMESTAMP,
@@ -85,10 +85,10 @@ export class DbQuiz {
         entry: string
         type: string
         direction: string
-        isExtra: number
+        source: string | null
       }>(/* sql */ `
-        INSERT INTO [${this.tableName}] (id, [entry], [type], direction, isExtra)
-        VALUES (@id, @entry, @type, @direction, @isExtra)
+        INSERT INTO [${this.tableName}] (id, [entry], [type], direction, source)
+        VALUES (@id, @entry, @type, @direction, @source)
       `)
 
       const stmtQ = g.server.db.prepare<{
@@ -122,7 +122,7 @@ export class DbQuiz {
           entry: it.entry,
           type: it.type,
           direction: it.direction,
-          isExtra: it.isExtra ? 1 : 0
+          source: it.source || null
         })
 
         stmtQ.run({
@@ -133,7 +133,7 @@ export class DbQuiz {
           type: it.type,
           direction: it.direction,
           description: it.description || '',
-          tag: (it.tag || '') + it.isExtra ? ' extra' : ''
+          tag: [it.tag || '', it.source || ''].filter((it) => it).join(' ')
         })
 
         out.push(
