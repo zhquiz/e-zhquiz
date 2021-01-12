@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
+import { DbLibrary } from '../db/library'
 import { g } from '../shared'
 
 const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -81,6 +82,113 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         return {
           result,
           count
+        }
+      }
+    )
+  }
+
+  {
+    const sBody = S.shape({
+      title: S.string(),
+      entries: S.list(S.string()).minItems(1),
+      type: S.string().optional(),
+      description: S.string().optional(),
+      tag: S.string().optional()
+    })
+
+    const sResponse = S.shape({
+      id: S.string()
+    })
+
+    f.put<{
+      Body: typeof sBody.type
+    }>(
+      '/',
+      {
+        schema: {
+          body: sBody.valueOf()
+        }
+      },
+      async (req): Promise<typeof sResponse.type> => {
+        const [r] = DbLibrary.create(req.body)
+
+        return {
+          id: r.entry.id
+        }
+      }
+    )
+  }
+
+  {
+    const sQuerystring = S.shape({
+      id: S.string()
+    })
+
+    const sBody = S.shape({
+      title: S.string(),
+      entries: S.list(S.string()).minItems(1),
+      type: S.string().optional(),
+      description: S.string().optional(),
+      tag: S.string().optional()
+    })
+
+    const sResponse = S.shape({
+      result: S.string()
+    })
+
+    f.patch<{
+      Querystring: typeof sQuerystring.type
+      Body: typeof sBody.type
+    }>(
+      '/',
+      {
+        schema: {
+          querystring: sQuerystring.valueOf(),
+          body: sBody.valueOf(),
+          response: {
+            201: sResponse.valueOf()
+          }
+        }
+      },
+      async (req): Promise<typeof sResponse.type> => {
+        DbLibrary.update({
+          ...req.body,
+          id: req.query.id
+        })
+
+        return {
+          result: 'updated'
+        }
+      }
+    )
+  }
+
+  {
+    const sQuerystring = S.shape({
+      id: S.string()
+    })
+
+    const sResponse = S.shape({
+      result: S.string()
+    })
+
+    f.delete<{
+      Querystring: typeof sQuerystring.type
+    }>(
+      '/',
+      {
+        schema: {
+          querystring: sQuerystring.valueOf(),
+          response: {
+            201: sResponse.valueOf()
+          }
+        }
+      },
+      async (req): Promise<typeof sResponse.type> => {
+        DbLibrary.delete(req.query.id)
+
+        return {
+          result: 'deleted'
         }
       }
     )
