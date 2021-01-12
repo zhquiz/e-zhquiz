@@ -172,7 +172,7 @@ export class DbQuiz {
       .run(...ids)
   }
 
-  private constructor(public entry: Partial<IDbQuiz> & { id: string }) {
+  constructor(public entry: Partial<IDbQuiz> & { id: string }) {
     if (!entry.id) {
       throw new Error('no entry id')
     }
