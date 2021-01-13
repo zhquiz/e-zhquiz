@@ -1,5 +1,6 @@
 import { Ulid } from 'id128'
 import { DurationUnit, addDate } from 'native-duration'
+import jieba from 'nodejieba'
 
 import { g } from '../shared'
 
@@ -20,7 +21,7 @@ export interface IDbQuiz {
   english?: string
   type: string
   direction: string
-  source: string
+  source?: string
   description?: string
   tag?: string
   srsLevel?: number
@@ -40,8 +41,8 @@ export class DbQuiz {
     g.server.db.exec(/* sql */ `
       CREATE TABLE IF NOT EXISTS [${this.tableName}] (
         id          TEXT PRIMARY KEY,
-        createdAt   INT strftime('%s','now'),
-        updatedAt   INT strftime('%s','now'),
+        createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
+        updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         [entry]     TEXT NOT NULL,
         [type]      TEXT NOT NULL,
         direction   TEXT NOT NULL,
@@ -56,11 +57,23 @@ export class DbQuiz {
         maxWrong    INT
       );
 
+      CREATE UNIQUE INDEX idx_${this.tableName}_entry_type_direction ON [${this.tableName}]([entry], [type], direction);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_source ON [${this.tableName}](source);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_srsLevel ON [${this.tableName}](srsLevel);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_nextReview ON [${this.tableName}](nextReview);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_lastRight ON [${this.tableName}](lastRight);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_lastWrong ON [${this.tableName}](lastWrong);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_rightStreak ON [${this.tableName}](rightStreak);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_wrongStreak ON [${this.tableName}](wrongStreak);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_maxRight ON [${this.tableName}](maxRight);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_maxWrong ON [${this.tableName}](maxWrong);
+
       CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
         AFTER UPDATE ON [${this.tableName}]
-        WHEN NEW.updatedAt IS NULL
-        FOR EACH ROW BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id
+        FOR EACH ROW
+        WHEN NEW.updatedAt = OLD.updatedAt
+        BEGIN
+          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
 
       CREATE VIRTUAL TABLE IF NOT EXISTS ${this.tableName}_q USING fts5(
@@ -79,71 +92,89 @@ export class DbQuiz {
   static create(...items: IDbQuiz[]) {
     const out: DbQuiz[] = []
 
-    g.server.db.transaction(() => {
-      const stmt = g.server.db.prepare<{
-        id: string
-        entry: string
-        type: string
-        direction: string
-        source: string | null
-      }>(/* sql */ `
-        INSERT INTO [${this.tableName}] (id, [entry], [type], direction, source)
-        VALUES (@id, @entry, @type, @direction, @source)
-      `)
+    const stmt = g.server.db.prepare<{
+      id: string
+      entry: string
+      type: string
+      direction: string
+      source: string | null
+    }>(/* sql */ `
+      INSERT INTO [${this.tableName}] (id, [entry], [type], direction, source)
+      VALUES (@id, @entry, @type, @direction, @source)
+    `)
 
-      const stmtQ = g.server.db.prepare<{
-        id: string
-        entry: string
-        pinyin: string | null
-        english: string
-        type: string
-        direction: string
-        description: string
-        tag: string
-      }>(/* sql */ `
-        INSERT INTO ${this.tableName}_q (id, [entry], pinyin, english, [type], direction, [description], tag)
-        VALUES (
-          @id,
-          @entry,
-          COALESCE(@pinyin,  to_pinyin(@entry)),
-          @english,
-          @type,
-          @direction
-          @description,
-          @tag
-        )
-      `)
+    const stmtQ = g.server.db.prepare<{
+      id: string
+      entry: string
+      pinyin: string | null
+      english: string
+      type: string
+      direction: string
+      description: string
+      tag: string
+    }>(/* sql */ `
+      INSERT INTO ${this.tableName}_q (id, [entry], pinyin, english, [type], direction, [description], tag)
+      VALUES (
+        @id,
+        @entry,
+        COALESCE(@pinyin,  to_pinyin(@entry)),
+        @english,
+        @type,
+        @direction
+        @description,
+        @tag
+      )
+    `)
 
-      items.map((it) => {
-        const id = Ulid.generate().toCanonical()
+    const stmtEng = g.server.zh.prepare(/* sql */ `
+    SELECT english
+    FROM vocab
+    WHERE simplified = @entry OR traditional = @entry
+    `)
 
-        stmt.run({
-          id,
-          entry: it.entry,
-          type: it.type,
-          direction: it.direction,
-          source: it.source || null
-        })
+    items.map((it) => {
+      const id = Ulid.generate().toCanonical()
 
-        stmtQ.run({
-          id,
-          entry: it.entry,
-          pinyin: it.pinyin || null,
-          english: it.english || '',
-          type: it.type,
-          direction: it.direction,
-          description: it.description || '',
-          tag: [it.tag || '', it.source || ''].filter((it) => it).join(' ')
-        })
-
-        out.push(
-          new DbQuiz({
-            ...it,
-            id
-          })
-        )
+      stmt.run({
+        id,
+        entry: it.entry,
+        type: it.type,
+        direction: it.direction,
+        source: it.source || null
       })
-    })()
+
+      stmtQ.run({
+        id,
+        entry: it.entry,
+        pinyin: it.pinyin
+          ? it.pinyin
+              .split(' ')
+              .map((s) => s.replace(/\d$/, ''))
+              .join(' ')
+          : null,
+        english:
+          it.english ||
+          jieba
+            .cut(it.entry)
+            .flatMap((s) => {
+              return stmtEng.all({ entry: s })
+            })
+            .map(({ english }) => english)
+            .join('; ') ||
+          'unknown',
+        type: it.type,
+        direction: it.direction,
+        description: it.description || '',
+        tag: [it.tag || '', it.source || ''].filter((it) => it).join(' ')
+      })
+
+      out.push(
+        new DbQuiz({
+          ...it,
+          id
+        })
+      )
+    })
 
     return out
   }

@@ -19,16 +19,19 @@ export class DbExtra {
     g.server.db.exec(/* sql */ `
       CREATE TABLE IF NOT EXISTS [${this.tableName}] (
         id          TEXT PRIMARY KEY,
-        createdAt   TIMESTAMP strftime('%s','now'),
-        updatedAt   TIMESTAMP strftime('%s','now'),
+        createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
+        updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         chinese     TEXT NOT NULL UNIQUE
       );
 
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_updatedAt ON [${this.tableName}](updatedAt);
+
       CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
         AFTER UPDATE ON [${this.tableName}]
-        WHEN NEW.updatedAt IS NULL
-        FOR EACH ROW BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id
+        FOR EACH ROW
+        WHEN NEW.updatedAt = OLD.updatedAt
+        BEGIN
+          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
 
       CREATE VIRTUAL TABLE IF NOT EXISTS ${this.tableName}_q USING fts5(
@@ -43,74 +46,72 @@ export class DbExtra {
     `)
   }
 
-  static create(...items: IDbExtra[]) {
+  static create(items: IDbExtra[]) {
     const out: DbExtra[] = []
 
-    g.server.db.transaction(() => {
-      const stmt = g.server.db.prepare<{
-        id: string
-        chinese: string
-      }>(/* sql */ `
-        INSERT INTO [${this.tableName}] (id, chinese)
-        VALUES (@id, @chinese)
-      `)
+    const stmt = g.server.db.prepare<{
+      id: string
+      chinese: string
+    }>(/* sql */ `
+      INSERT INTO [${this.tableName}] (id, chinese)
+      VALUES (@id, @chinese)
+    `)
 
-      const stmtQ = g.server.db.prepare<{
-        id: string
-        chinese: string
-        pinyin: string
-        english: string
-        type: string
-        description: string
-        tag: string
-      }>(/* sql */ `
-        INSERT INTO ${this.tableName}_q (id, chinese, pinyin, english, [type], [description], tag)
-        VALUES (
-          @id,
-          jieba(@chinese),
-          @pinyin,
-          @english,
-          @type,
-          @description,
-          @tag
-        )
-      `)
+    const stmtQ = g.server.db.prepare<{
+      id: string
+      chinese: string
+      pinyin: string
+      english: string
+      type: string
+      description: string
+      tag: string
+    }>(/* sql */ `
+      INSERT INTO ${this.tableName}_q (id, chinese, pinyin, english, [type], [description], tag)
+      VALUES (
+        @id,
+        jieba(@chinese),
+        @pinyin,
+        @english,
+        @type,
+        @description,
+        @tag
+      )
+    `)
 
-      items.map((it) => {
-        const id = Ulid.generate().toCanonical()
-        const pinyin =
-          it.pinyin ||
-          toPinyin(it.chinese, { toneToNumber: true, keepRest: true })
+    items.map((it) => {
+      const id = Ulid.generate().toCanonical()
+      const pinyin =
+        it.pinyin ||
+        toPinyin(it.chinese, { toneToNumber: true, keepRest: true })
 
-        stmt.run({
-          id,
-          chinese: it.chinese
-        })
-
-        stmtQ.run({
-          id,
-          chinese: it.chinese,
-          pinyin,
-          english: it.english || '',
-          type: it.type || 'vocab',
-          description: it.description || '',
-          tag: it.tag || ''
-        })
-
-        out.push(
-          new DbExtra({
-            ...it,
-            id,
-            pinyin
-          })
-        )
+      stmt.run({
+        id,
+        chinese: it.chinese
       })
-    })()
+
+      stmtQ.run({
+        id,
+        chinese: it.chinese,
+        pinyin,
+        english: it.english || '',
+        type: it.type || 'vocab',
+        description: it.description || '',
+        tag: it.tag || ''
+      })
+
+      out.push(
+        new DbExtra({
+          ...it,
+          id,
+          pinyin
+        })
+      )
+    })
 
     return out
   }
 
-  static update(...items: (Partial<IDbExtra> & { id: string })[]) {
+  static update(items: (Partial<IDbExtra> & { id: string })[]) {
     g.server.db.transaction(() => {
       const stmt = g.server.db.prepare<{
         id: string
@@ -172,7 +173,7 @@ export class DbExtra {
     })()
   }
 
-  static delete(...ids: string[]) {
+  static delete(ids: string[]) {
     if (ids.length < 1) {
       throw new Error('nothing to delete')
     }

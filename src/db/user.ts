@@ -32,16 +32,17 @@ export class DbUser {
     g.server.db.exec(/* sql */ `
       CREATE TABLE IF NOT EXISTS [${this.tableName}] (
         id          INT PRIMARY KEY DEFAULT 1,
-        createdAt   TIMESTAMP strftime('%s','now'),
-        updatedAt   TIMESTAMP strftime('%s','now'),
+        createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
+        updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         meta        JSON DEFAULT '{}'
       );
 
       CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
         AFTER UPDATE ON [${this.tableName}]
-        WHEN NEW.updatedAt IS NULL
-        FOR EACH ROW BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id
+        FOR EACH ROW
+        WHEN NEW.updatedAt = OLD.updatedAt
+        BEGIN
+          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
     `)
   }

@@ -2,6 +2,7 @@ import shuffle from 'array-shuffle'
 import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
+import { DbExtra } from '../db/extra'
 import { DbQuiz } from '../db/quiz'
 import { g } from '../shared'
 
@@ -49,11 +50,11 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           source,
           select: _select
         } = req.query
-        const ids = _ids ? _ids.split(/,/g) : []
-        const entries = _entries ? _entries.split(/,/g) : []
+        const ids = _ids ? _ids.split(',') : []
+        const entries = _entries ? _entries.split(',') : []
 
         const select = _select
-          .split(/,/g)
+          .split(',')
           .map((it) => selMap[it])
           .filter((it) => it)
 
@@ -268,9 +269,9 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           q
         } = req.query
 
-        const type = _type ? _type.split(/,/g) : []
-        const stage = _stage ? _stage.split(/,/g) : []
-        const direction = _direction ? _direction.split(/,/g) : []
+        const type = _type ? _type.split(',') : []
+        const stage = _stage ? _stage.split(',') : []
+        const direction = _direction ? _direction.split(',') : []
 
         g.server.db
           .prepare(
@@ -355,6 +356,184 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           upcoming: upcoming.sort(
             ({ nextReview: n1 }, { nextReview: n2 }) => (n1 || 0) - (n2 || 0)
           )
+        }
+      }
+    )
+  }
+
+  {
+    const sBody = S.shape({
+      entries: S.list(S.string()).minItems(1),
+      type: S.string().enum('hanzi', 'vocab', 'sentence'),
+      source: S.string().enum('extra').optional()
+    })
+
+    const sResponse = S.shape({
+      result: S.list(
+        S.shape({
+          ids: S.list(S.string()),
+          type: S.string()
+        })
+      )
+    })
+
+    f.put<{
+      Body: typeof sBody.type
+    }>(
+      '/',
+      {
+        schema: {
+          body: sBody.valueOf(),
+          response: {
+            201: sResponse.valueOf()
+          }
+        }
+      },
+      async (req, reply): Promise<typeof sResponse.type> => {
+        const { entries, type, source } = req.body
+
+        const existing = g.server.db
+          .prepare(
+            /* sql */ `
+        SELECT id, [entry], direction
+        FROM quiz
+        WHERE [entry] IN (${Array(entries.length).fill('?')}) AND [type] = ?
+        `
+          )
+          .all(...entries, type) as {
+          id: string
+          entry: string
+          direction: string
+        }[]
+
+        const result: {
+          ids: string[]
+          entry: string
+          type: string
+          source?: 'extra'
+        }[] = []
+
+        g.server.db.transaction(() => {
+          entries.map((entry) => {
+            const dirs = ['se', 'ec']
+            const subresult: {
+              ids: string[]
+              entry: string
+              type: string
+              source?: 'extra'
+            } = {
+              ids: [],
+              entry,
+              type: 'vocab',
+              source
+            }
+            result.push(subresult)
+
+            if (!source) {
+              switch (type) {
+                case 'vocab':
+                  const rs = g.server.zh
+                    .prepare(
+                      /* sql */ `
+                    SELECT DISTINCT traditional
+                    FROM vocab
+                    WHERE simplified = @entry OR traditional = @entry
+                    `
+                    )
+                    .all({ entry })
+
+                  if (!rs.length) {
+                    subresult.source = 'extra'
+                  } else if (rs.some((r) => r.traditional)) {
+                    dirs.push('te')
+                  }
+                  break
+                case 'hanzi':
+                  const rHanzi = g.server.zh
+                    .prepare(
+                      /* sql */ `
+                  SELECT [entry]
+                  FROM token
+                  WHERE [entry] = @entry AND english IS NOT NULL
+                  `
+                    )
+                    .get({ entry })
+
+                  if (!rHanzi) {
+                    subresult.source = 'extra'
+                  }
+                  break
+                case 'sentence':
+                  const rSentence = g.server.zh
+                    .prepare(
+                      /* sql */ `
+                  SELECT chinese
+                  FROM sentence
+                  WHERE chinese = @entry
+                  `
+                    )
+                    .get({ entry })
+
+                  if (!rSentence) {
+                    subresult.source = 'extra'
+                  }
+              }
+            }
+
+            if (subresult.source === 'extra') {
+              try {
+                DbExtra.create([
+                  {
+                    chinese: subresult.entry
+                  }
+                ])
+              } catch (e) {
+                g.server.logger.error(e)
+              }
+            }
+
+            if (type === 'vocab' && !source) {
+              const rs = g.server.zh
+                .prepare(
+                  /* sql */ `
+            SELECT DISTINCT traditional
+            FROM vocab
+            WHERE simplified = @entry OR traditional = @entry
+            `
+                )
+                .all({ entry })
+
+              if (!rs.length) {
+                subresult.source = 'extra'
+              } else if (rs.some((r) => r.traditional)) {
+                dirs.push('te')
+              }
+            }
+
+            dirs.map((direction) => {
+              const ext = existing.find(
+                (r) => r.entry === entry && r.direction === direction
+              )
+
+              if (ext) {
+                subresult.ids.push(ext.id)
+              } else {
+                const [r] = DbQuiz.create({
+                  entry,
+                  type,
+                  direction,
+                  source
+                })
+
+                subresult.ids.push(r!.entry.id)
+              }
+            })
+          })
+        })()
+
+        reply.status(201)
+        return {
+          result
         }
       }
     )

@@ -62,7 +62,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           sortDirection
 
         const sel = select
-          .split(/,/g)
+          .split(' ')
           .map((s) => selMap[s.trim()])
           .filter((s) => s)
 
@@ -158,7 +158,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const { entry, select } = req.query
 
         const sel = select
-          .split(/,/g)
+          .split(',')
           .map((s) => selMap[s.trim()])
           .filter((s) => s)
 
@@ -326,7 +326,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         }
 
-        const [r] = DbExtra.create(req.body)
+        const [r] = DbExtra.create([req.body])
 
         return {
           id: r!.entry.id
@@ -370,10 +370,12 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req, reply): Promise<typeof sResponse.type> => {
         const { id } = req.query
 
-        DbExtra.update({
-          ...req.body,
-          id
-        })
+        DbExtra.update([
+          {
+            ...req.body,
+            id
+          }
+        ])
 
         reply.status(201)
         return {
@@ -407,7 +409,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req, reply): Promise<typeof sResponse.type> => {
         const { id } = req.query
 
-        DbExtra.delete(id)
+        DbExtra.delete([id])
 
         reply.status(201)
         return {

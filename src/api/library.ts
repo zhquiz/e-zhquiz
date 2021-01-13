@@ -110,7 +110,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req): Promise<typeof sResponse.type> => {
-        const [r] = DbLibrary.create(req.body)
+        const [r] = DbLibrary.create([req.body])
 
         return {
           id: r!.entry.id
@@ -151,10 +151,12 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req): Promise<typeof sResponse.type> => {
-        DbLibrary.update({
-          ...req.body,
-          id: req.query.id
-        })
+        DbLibrary.update([
+          {
+            ...req.body,
+            id: req.query.id
+          }
+        ])
 
         return {
           result: 'updated'
@@ -185,7 +187,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req): Promise<typeof sResponse.type> => {
-        DbLibrary.delete(req.query.id)
+        DbLibrary.delete([req.query.id])
 
         return {
           result: 'deleted'

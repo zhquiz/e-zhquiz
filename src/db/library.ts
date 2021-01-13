@@ -17,18 +17,22 @@ export class DbLibrary {
     g.server.db.exec(/* sql */ `
       CREATE TABLE IF NOT EXISTS [${this.tableName}] (
         id          TEXT PRIMARY KEY,
-        createdAt   TIMESTAMP strftime('%s','now'),
-        updatedAt   TIMESTAMP strftime('%s','now'),
+        createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
+        updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         title       TEXT,
         entries     JSON DEFAULT '[]',
         source      TEXT
       );
 
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_updatedAt ON [${this.tableName}](updatedAt);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_source ON [${this.tableName}](source);
+
       CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
         AFTER UPDATE ON [${this.tableName}]
-        WHEN NEW.updatedAt IS NULL
-        FOR EACH ROW BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id
+        FOR EACH ROW
+        WHEN NEW.updatedAt = OLD.updatedAt
+        BEGIN
+          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
 
       CREATE VIRTUAL TABLE IF NOT EXISTS ${this.tableName}_q USING fts5(
@@ -50,7 +54,7 @@ export class DbLibrary {
 
     if (!r) {
       this.create(
-        ...g.server.zh
+        g.server.zh
           .prepare(
             /* sql */ `
         SELECT title, entries FROM library
@@ -62,136 +66,132 @@ export class DbLibrary {
             entries: (r.entries as string)
               .replace(/^\x1f/, '')
               .replace(/\x1f$/, '')
-              .split(/\x1f/g),
+              .split('\x1f'),
             source: 'zh'
           }))
       )
     }
   }
 
-  static create(...items: IDbLibrary[]) {
+  static create(items: IDbLibrary[]) {
     const out: DbLibrary[] = []
 
-    g.server.db.transaction(() => {
+    const stmt = g.server.db.prepare<{
+      id: string
+      title: string
+      entries: string
+      source: string | null
+    }>(/* sql */ `
+      INSERT INTO [${this.tableName}] (id, title, entries, source)
+      VALUES (@id, @title, @entries, @source)
+    `)
+
+    const stmtQ = g.server.db.prepare<{
+      id: string
+      title: string
+      entry: string
+      description: string
+      tag: string
+    }>(/* sql */ `
+      INSERT INTO ${this.tableName}_q (id, title, [entry], [description], tag)
+      VALUES (
+        @id,
+        jieba(@title),
+        @entry,
+        @description,
+        @tag
+      )
+    `)
+
+    items.map((it) => {
+      const id = Ulid.generate().toCanonical()
+
+      stmt.run({
+        id,
+        title: it.title,
+        entries: JSON.stringify(it.entries),
+        source: it.source || null
+      })
+
+      stmtQ.run({
+        id,
+        title: it.title,
+        entry: it.entries.join(' '),
+        description: it.description || '',
+        tag: it.tag || ''
+      })
+
+      out.push(
+        new DbLibrary({
+          ...it,
+          id
+        })
+      )
+    })
+
+    return out
+  }
+
+  static update(items: (Partial<IDbLibrary> & { id: string })[]) {
+    items.map((it) => {
+      const entries = it.entries || []
+
       const stmt = g.server.db.prepare<{
         id: string
         title: string
         entries: string
-        source: string | null
+        source: string
       }>(/* sql */ `
-        INSERT INTO [${this.tableName}] (id, title, entries, source)
-        VALUES (@id, @title, @entries, @source)
+        UPDATE [${this.tableName}]
+        SET ${[
+          it.title ? 'title = @title' : '',
+          entries.length ? 'entries = @entries' : '',
+          typeof it.source !== 'undefined' ? 'source = @source' : ''
+        ]
+          .filter((s) => s)
+          .join(',')}
+        WHERE id = @id
       `)
 
       const stmtQ = g.server.db.prepare<{
         id: string
         title: string
         entry: string
-        description: string
-        tag: string
+        description: string | null
+        tag: string | null
       }>(/* sql */ `
-        INSERT INTO ${this.tableName}_q (id, title, [entry], [description], tag)
-        VALUES (
-          @id,
-          jieba(@title),
-          @entry,
-          @description,
-          @tag
-        )
+        UPDATE ${this.tableName}_q
+        SET ${[
+          it.title ? 'title = @title' : '',
+          entries.length ? '' : 'entry = @entry',
+          it.description !== null ? '[description] = @description' : '',
+          it.tag !== null ? 'tag = @tag' : ''
+        ]
+          .filter((s) => s)
+          .join(',')}
+        WHERE id = @id
       `)
 
-      items.map((it) => {
-        const id = Ulid.generate().toCanonical()
-
+      if (it.title || entries.length || typeof it.source !== 'undefined') {
         stmt.run({
-          id,
-          title: it.title,
-          entries: JSON.stringify(it.entries),
-          source: it.source || null
-        })
-
-        stmtQ.run({
-          id,
-          title: it.title,
-          entry: it.entries.join(' '),
-          description: it.description || '',
-          tag: it.tag || ''
-        })
-
-        out.push(
-          new DbLibrary({
-            ...it,
-            id
-          })
-        )
-      })
-    })()
-
-    return out
-  }
-
-  static update(...items: (Partial<IDbLibrary> & { id: string })[]) {
-    g.server.db.transaction(() => {
-      items.map((it) => {
-        const entries = it.entries || []
-
-        const stmt = g.server.db.prepare<{
-          id: string
-          title: string
-          entries: string
-          source: string
-        }>(/* sql */ `
-          UPDATE [${this.tableName}]
-          SET ${[
-            it.title ? 'title = @title' : '',
-            entries.length ? 'entries = @entries' : '',
-            typeof it.source !== 'undefined' ? 'source = @source' : ''
-          ]
-            .filter((s) => s)
-            .join(',')}
-          WHERE id = @id
-        `)
-
-        const stmtQ = g.server.db.prepare<{
-          id: string
-          title: string
-          entry: string
-          description: string | null
-          tag: string | null
-        }>(/* sql */ `
-          UPDATE ${this.tableName}_q
-          SET ${[
-            it.title ? 'title = @title' : '',
-            entries.length ? '' : 'entry = @entry',
-            it.description !== null ? '[description] = @description' : '',
-            it.tag !== null ? 'tag = @tag' : ''
-          ]
-            .filter((s) => s)
-            .join(',')}
-          WHERE id = @id
-        `)
-
-        if (it.title || entries.length || typeof it.source !== 'undefined') {
-          stmt.run({
-            id: it.id,
-            title: it.title || '',
-            entries: JSON.stringify(entries),
-            source: it.source || ''
-          })
-        }
-
-        stmtQ.run({
           id: it.id,
           title: it.title || '',
-          entry: entries.join(' '),
-          description: it.description ?? null,
-          tag: it.tag ?? null
+          entries: JSON.stringify(entries),
+          source: it.source || ''
         })
+      }
+
+      stmtQ.run({
+        id: it.id,
+        title: it.title || '',
+        entry: entries.join(' '),
+        description: it.description ?? null,
+        tag: it.tag ?? null
       })
-    })()
+    })
   }
 
-  static delete(...ids: string[]) {
+  static delete(ids: string[]) {
     if (ids.length < 1) {
       throw new Error('nothing to delete')
     }
