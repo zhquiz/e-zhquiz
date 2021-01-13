@@ -18,7 +18,7 @@ export const sDbUserMeta = S.shape({
     }),
     sentence: S.shape({
       min: S.integer().minimum(2),
-      max: S.integer().minimum(5)
+      max: S.integer().minimum(2)
     })
   })
 })
@@ -44,6 +44,8 @@ export class DbUser {
         BEGIN
           UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
+      
+      INSERT OR IGNORE INTO user () VALUES ()
     `)
   }
 }

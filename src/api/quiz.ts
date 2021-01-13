@@ -539,6 +539,39 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     )
   }
 
+  {
+    const sQuerystring = S.shape({
+      ids: S.string()
+    })
+
+    f.delete<{
+      Querystring: typeof sQuerystring.type
+    }>(
+      '/',
+      {
+        schema: {
+          querystring: sQuerystring.valueOf()
+        }
+      },
+      async (req, reply) => {
+        const ids = req.query.ids.split(',')
+        if (!req.query.ids || ids.length) {
+          reply.status(400)
+          return {
+            error: 'not enough ids'
+          }
+        }
+
+        DbQuiz.delete(...ids)
+
+        reply.status(201)
+        return {
+          result: 'deleted'
+        }
+      }
+    )
+  }
+
   next()
 }
 

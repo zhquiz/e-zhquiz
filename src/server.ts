@@ -1,11 +1,8 @@
-import { spawnSync } from 'child_process'
-import fs from 'fs'
 import path from 'path'
 
 import sqlite from 'better-sqlite3'
 import ON_DEATH from 'death'
 import fastify, { FastifyInstance } from 'fastify'
-import SecureSessionPlugin from 'fastify-secure-session'
 import fastifyStatic from 'fastify-static'
 import pino from 'pino'
 
@@ -53,19 +50,6 @@ export class Server implements IServerOptions, IServerAssets {
         req.log.info({ body: req.body }, 'parsed body')
       }
       done()
-    })
-
-    const sessionKey = path.join(opts.assetsDir, 'session-key')
-    if (!fs.existsSync(sessionKey)) {
-      fs.writeFileSync(
-        sessionKey,
-        spawnSync(g.getPath('node_modules/.bin/secure-session-gen-key'), {
-          encoding: 'buffer'
-        }).stdout
-      )
-    }
-    app.register(SecureSessionPlugin, {
-      key: sessionKey
     })
 
     app.register(fastifyStatic, {
