@@ -108,7 +108,7 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           .prepare(
             /* sql */ `
         SELECT [entry]
-        FROM quiz
+        FROM token
         WHERE [type] = 'hanzi' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL
         `
           )
