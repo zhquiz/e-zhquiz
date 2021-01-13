@@ -10,7 +10,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     chinese: 'extra.chinese chinese',
     pinyin: 'extra_q.pinyin pinyin',
     english: 'extra_q.english english',
-    type: 'extra.type [type]',
+    type: 'extra_q.type [type]',
     description: 'extra_q.description description',
     tag: 'extra_q.tag tag'
   }
@@ -41,10 +41,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         }
       },
-      async (
-        req,
-        reply
-      ): Promise<typeof sResponse.type | { error: string }> => {
+      async (req): Promise<typeof sResponse.type> => {
         const { q, select, sort = '-updatedAt', page, perPage } = req.query
 
         let sorter = sort
@@ -62,34 +59,20 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           sortDirection
 
         const sel = select
-          .split(' ')
+          .split(',')
           .map((s) => selMap[s.trim()])
           .filter((s) => s)
 
         if (!sel.length) {
-          reply.status(400)
-          return {
-            error: 'not enough select'
-          }
+          throw { statusCode: 400, message: 'not enough select' }
         }
 
-        const params = {
-          map: new Map<number, any>(),
-          set(v: any) {
-            const i = this.map.size + 1
-            this.map.set(i, v)
-            return `$${i}`
-          },
-          get() {
-            return Object.fromEntries(this.map)
-          }
-        }
         const where: string[] = []
 
         if (q) {
           where.push(/* sql */ `
           extra.id IN (
-            SELECT id FROM extra_q WHERE extra_q MATCH ${params.set(q)}
+            SELECT id FROM extra_q WHERE extra_q MATCH @q
           )
           `)
         }
@@ -104,7 +87,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         WHERE ${where.join(' AND ') || 'TRUE'}
         `
               )
-              .get(params.get()) || {}
+              .get({ q }) || {}
 
           const result = g.server.db
             .prepare(
@@ -113,12 +96,12 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         FROM extra
         LEFT JOIN extra_q ON extra_q.id = extra.id
         WHERE ${where.join(' AND ') || 'TRUE'}
+        GROUP BY extra.id
         ORDER BY ${sorter}
         LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-        GROUP BY extra.id
         `
             )
-            .all(params.get())
+            .all({ q })
 
           return {
             result,
@@ -163,10 +146,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           .filter((s) => s)
 
         if (!sel.length) {
-          reply.status(400)
-          return {
-            error: 'not enough select'
-          }
+          throw { statusCode: 400, message: 'not enough select' }
         }
 
         const result = g.server.db
@@ -184,9 +164,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         if (!result) {
           reply.status(404)
-          return {
-            error: 'no entries found'
-          }
+          throw { statusCode: 404, message: 'no entries found' }
         }
 
         return result

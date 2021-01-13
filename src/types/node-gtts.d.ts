@@ -1,4 +1,4 @@
-declare module 'gtts' {
+declare module 'node-gtts' {
   function Text2Speech(
     lang: string,
     debug?: boolean

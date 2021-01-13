@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify'
-import Text2Speech from 'gtts'
 import S from 'jsonschema-definer'
+import Text2Speech from 'node-gtts'
 import jieba from 'nodejieba'
 
 const chineseRouter = (f: FastifyInstance, _: unknown, next: () => void) => {

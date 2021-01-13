@@ -57,7 +57,7 @@ export class DbQuiz {
         maxWrong    INT
       );
 
-      CREATE UNIQUE INDEX idx_${this.tableName}_entry_type_direction ON [${this.tableName}]([entry], [type], direction);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_entry_type_direction ON [${this.tableName}]([entry], [type], direction);
       CREATE INDEX IF NOT EXISTS idx_${this.tableName}_source ON [${this.tableName}](source);
       CREATE INDEX IF NOT EXISTS idx_${this.tableName}_srsLevel ON [${this.tableName}](srsLevel);
       CREATE INDEX IF NOT EXISTS idx_${this.tableName}_nextReview ON [${this.tableName}](nextReview);
@@ -120,7 +120,7 @@ export class DbQuiz {
         COALESCE(@pinyin,  to_pinyin(@entry)),
         @english,
         @type,
-        @direction
+        @direction,
         @description,
         @tag
       )

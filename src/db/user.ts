@@ -45,7 +45,7 @@ export class DbUser {
           UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
       
-      INSERT OR IGNORE INTO user () VALUES ()
+      INSERT OR IGNORE INTO user (id) VALUES (1);
     `)
   }
 }

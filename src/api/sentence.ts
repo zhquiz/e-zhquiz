@@ -30,10 +30,7 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         }
       },
-      async (
-        req,
-        reply
-      ): Promise<typeof sResponse.type | { error: string }> => {
+      async (req): Promise<typeof sResponse.type> => {
         const { entry } = req.query
 
         const r = g.server.zh
@@ -47,10 +44,7 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           .get({ entry })
 
         if (!r) {
-          reply.status(404)
-          return {
-            error: 'not found'
-          }
+          throw { statusCode: 404, message: 'not found' }
         }
 
         return {
@@ -65,34 +59,34 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
   }
 
   {
-    const sQuerystring = S.shape({
-      level: S.integer().minimum(1).maximum(60),
-      levelMin: S.integer().minimum(1).maximum(60)
-    })
-
     const sResponse = S.shape({
       result: S.string(),
       english: S.string(),
       level: S.integer()
     })
 
-    f.get<{
-      Querystring: typeof sQuerystring.type
-    }>(
+    f.get(
       '/random',
       {
         schema: {
-          querystring: sQuerystring.valueOf(),
           response: {
             200: sResponse.valueOf()
           }
         }
       },
-      async (
-        req,
-        reply
-      ): Promise<typeof sResponse.type | { error: string }> => {
-        const { level, levelMin } = req.query
+      async (): Promise<typeof sResponse.type> => {
+        const { sentenceMin, sentenceMax, level, levelMin } = g.server.db
+          .prepare(
+            /* sql */ `
+        SELECT
+          json_extract(meta, '$.settings.sentence.min') sentenceMin,
+          json_extract(meta, '$.settings.sentence.max') sentenceMax,
+          json_extract(meta, '$.level') [level],
+          json_extract(meta, '$.levelMin') levelMin
+        FROM user
+        `
+          )
+          .get()
 
         const entries: string[] = g.server.db
           .prepare(
@@ -105,24 +99,17 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           .all()
           .map(({ entry }) => entry)
 
-        const params = {
-          map: new Map<number, any>(),
-          set(v: any) {
-            const i = this.map.size + 1
-            this.map.set(i, v)
-            return `$${i}`
-          },
-          get() {
-            return Object.fromEntries(this.map)
-          }
+        const where: string[] = [`level >= @levelMin AND level <= @level`]
+
+        if (sentenceMin) {
+          where.push(`length(chinese) >= @sentenceMin`)
         }
 
-        const where: string[] = [
-          `level >= ${params.set(levelMin)} AND level <= ${params.set(level)}`
-        ]
-        if (entries.length) {
-          where.push(`chinese NOT IN (${entries.map((it) => params.set(it))})`)
+        if (sentenceMax) {
+          where.push(`length(chinese) <= @sentenceMax`)
         }
+
+        const entriesSet = new Set(entries)
 
         let r = g.server.zh
           .prepare(
@@ -132,7 +119,8 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         WHERE ${where.join(' AND ')}
         `
           )
-          .all(params.get())
+          .all({ level, levelMin, sentenceMin, sentenceMax })
+          .filter(({ result }) => !entriesSet.has(result))
 
         if (!r.length) {
           where.pop()
@@ -145,14 +133,12 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           WHERE ${where.join(' AND ')}
           `
             )
-            .all(params.get())
+            .all({ level, levelMin, sentenceMin, sentenceMax })
+            .filter(({ result }) => !entriesSet.has(result))
         }
 
         if (!r.length) {
-          reply.status(201)
-          return {
-            error: 'no matching entries found'
-          }
+          throw { statusCode: 404, message: 'no matching entries found' }
         }
 
         return r[Math.floor(Math.random() * r.length)]
@@ -165,9 +151,7 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       q: S.string().optional(),
       page: S.integer().minimum(1).optional(),
       perPage: S.integer().minimum(5).optional(),
-      generate: S.integer().minimum(5).optional(),
-      level: S.integer().minimum(1).maximum(60).optional(),
-      levelMin: S.integer().minimum(1).maximum(60).optional()
+      generate: S.integer().minimum(5).optional()
     })
 
     const sResponse = S.shape({
@@ -193,25 +177,14 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req): Promise<typeof sResponse.type> => {
-        const {
-          q,
-          page = 1,
-          perPage = 5,
-          generate,
-          level,
-          levelMin
-        } = req.query
+        const { q, page = 1, perPage = 5, generate } = req.query
 
         const where: string[] = []
         if (q) {
           where.push(/* sql */ `chinese LIKE '%'||@q||'%'`)
         }
 
-        if (level && levelMin) {
-          where.push(/* sql */ `[level] <= @level AND [level] >= @levelMin`)
-        }
-
-        const { sentenceMin, sentenceMax } = g.server.db
+        const { sentenceMin, sentenceMax, level, levelMin } = g.server.db
           .prepare(
             /* sql */ `
         SELECT
@@ -222,10 +195,12 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           )
           .get()
 
-        if (sentenceMin && sentenceMax) {
-          where.push(
-            /* sql */ `length(chinese) <= @sentenceMax AND length(chinese) >= @sentenceMin`
-          )
+        if (sentenceMin) {
+          where.push(/* sql */ `length(chinese) >= @sentenceMin`)
+        }
+
+        if (sentenceMax) {
+          where.push(/* sql */ `length(chinese) <= @sentenceMax`)
         }
 
         const { count = 0 } =
@@ -250,7 +225,7 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
         `
           )
-          .all({ q, level, levelMin })
+          .all({ q, level, levelMin, sentenceMax, sentenceMin })
 
         if (generate && result.length < generate) {
           const additional = g.server.db

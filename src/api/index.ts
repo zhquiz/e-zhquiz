@@ -10,10 +10,6 @@ import userRouter from './user'
 import vocabRouter from './vocab'
 
 const apiRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
-  f.get('/isReady', async () => {
-    return {}
-  })
-
   f.register(chineseRouter, {
     prefix: '/chinese'
   })

@@ -39,10 +39,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         }
       },
-      async (
-        req,
-        reply
-      ): Promise<typeof sResponse.type | { error: string }> => {
+      async (req): Promise<typeof sResponse.type> => {
         const {
           ids: _ids,
           entries: _entries,
@@ -59,10 +56,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           .filter((it) => it)
 
         if (!select.length) {
-          reply.status(400)
-          return {
-            error: 'not enough select'
-          }
+          throw { statusCode: 400, message: 'not enough select' }
         }
 
         const params = {
@@ -77,47 +71,64 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         }
 
-        const where: string[] = []
+        const result: any[] = []
+        const getResult = (initialWhere: string) => {
+          const where = [initialWhere]
+
+          if (type) {
+            where.push(/* sql */ `
+            quiz.type = ${params.set(type)}
+            `)
+          }
+
+          if (source) {
+            where.push(/* sql */ `
+            quiz.source = ${params.set(source)}
+            `)
+          } else {
+            where.push(/* sql */ `
+            quiz.source IS NULL
+            `)
+          }
+
+          return g.server.db
+            .prepare(
+              /* sql */ `
+          SELECT ${select}
+          FROM quiz
+          WHERE ${where.join(' AND ')}
+          `
+            )
+            .all(params.get())
+        }
+
+        const batchSize = 500
         if (ids.length) {
-          where.push(/* sql */ `
-          quiz.id IN (${ids.map((it) => params.set(it))})
-          `)
+          for (let i = 0; i < ids.length; i += batchSize) {
+            result.push(
+              ...getResult(
+                /* sql */ `quiz.id IN (${ids.map((it) => params.set(it))})`
+              )
+            )
+            params.map = new Map()
+          }
         } else if (entries.length) {
-          where.push(/* sql */ `
-          quiz.entry IN (${entries.map((it) => params.set(it))})
-          `)
+          for (let i = 0; i < entries.length; i += batchSize) {
+            result.push(
+              ...getResult(
+                /* sql */ `quiz.entry IN (${entries.map((it) =>
+                  params.set(it)
+                )})`
+              )
+            )
+            params.map = new Map()
+          }
         } else {
-          reply.status(400)
-          return {
-            error: 'either ids or entries must be specified'
+          throw {
+            statusCode: 400,
+            message: 'either ids or entries must be specified'
           }
         }
-
-        if (type) {
-          where.push(/* sql */ `
-          quiz.type = ${params.set(type)}
-          `)
-        }
-
-        if (source) {
-          where.push(/* sql */ `
-          quiz.source = ${params.set(source)}
-          `)
-        } else {
-          where.push(/* sql */ `
-          quiz.source IS NULL
-          `)
-        }
-
-        const result = g.server.db
-          .prepare(
-            /* sql */ `
-        SELECT ${select}
-        FROM quiz
-        WHERE ${where.join(' AND ')}
-        `
-          )
-          .all(params.get())
 
         return {
           result
@@ -156,29 +167,23 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { entries, type } = req.body
 
-        const params = {
-          map: new Map<number, any>(),
-          set(v: any) {
-            const i = this.map.size + 1
-            this.map.set(i, v)
-            return `$${i}`
-          },
-          get() {
-            return Object.fromEntries(this.map)
-          }
-        }
+        const result: any[] = []
 
-        const result = g.server.db
-          .prepare(
-            /* sql */ `
-      SELECT [entry], srsLevel
-      FROM quiz
-      WHERE [entry] IN (${entries.map((it) =>
-        params.set(it)
-      )}) AND [type] = ${params.set(type)}
-      `
+        const chunkSize = 500
+        for (let i = 0; i < entries.length; i += chunkSize) {
+          const chunk = entries.slice(i, i + chunkSize)
+          result.push(
+            ...g.server.db
+              .prepare(
+                /* sql */ `
+          SELECT [entry], srsLevel
+          FROM quiz
+          WHERE [type] = ? AND [entry] IN (${Array(chunk.length).fill('?')})
+          `
+              )
+              .all(type, ...chunk)
           )
-          .all()
+        }
 
         return {
           result
@@ -229,11 +234,12 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
   {
     const sQuerystring = S.shape({
-      type: S.string().optional(),
-      stage: S.string().optional(),
-      direction: S.string().optional(),
-      isDue: S.boolean(),
-      q: S.string()
+      type: S.string(),
+      stage: S.string(),
+      direction: S.string(),
+      q: S.string().optional(),
+      includeUndue: S.boolean().optional(),
+      includeExtra: S.boolean().optional()
     })
 
     const sQuizEntry = S.shape({
@@ -265,7 +271,8 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           type: _type,
           stage: _stage,
           direction: _direction,
-          isDue,
+          includeUndue,
+          includeExtra,
           q
         } = req.query
 
@@ -273,17 +280,29 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const stage = _stage ? _stage.split(',') : []
         const direction = _direction ? _direction.split(',') : []
 
+        if (!type.length || !stage.length || !direction.length) {
+          return {
+            quiz: [],
+            upcoming: []
+          }
+        }
+
         g.server.db
           .prepare(
             /* sql */ `
         UPDATE user
-        SET meta = json_set(
-          meta.settings,
-          json_set(COALESCE(meta.settings, json('{}')).quiz, json(?))
-        )
+        SET meta = json_set(meta, '$.settings.quiz', json(?))
         `
           )
-          .run(JSON.stringify({ type, stage, direction, isDue }))
+          .run(
+            JSON.stringify({
+              type,
+              stage,
+              direction,
+              includeUndue,
+              includeExtra
+            })
+          )
 
         const params = {
           map: new Map<number, any>(),
@@ -296,6 +315,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             return Object.fromEntries(this.map)
           }
         }
+
         const where: string[] = []
         if (q) {
           where.push(/* sql */ `
@@ -305,26 +325,38 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           `)
         }
 
-        const orCond: string[] = []
-        if (stage.includes('new')) {
-          orCond.push(/* sql */ `quiz.srsLevel IS NULL`)
-        }
+        if (stage.length) {
+          const orCond: string[] = []
 
-        if (stage.includes('learning')) {
-          orCond.push(/* sql */ `quiz.srsLevel < 3`)
-        }
+          if (stage.includes('new')) {
+            orCond.push(/* sql */ `quiz.srsLevel IS NULL`)
+          }
 
-        if (stage.includes('graduated')) {
-          orCond.push(/* sql */ `quiz.graduated >= 3`)
-        }
+          if (stage.includes('learning')) {
+            orCond.push(/* sql */ `quiz.srsLevel < 3`)
+          }
 
-        if (orCond.length) {
+          if (stage.includes('graduated')) {
+            orCond.push(/* sql */ `quiz.graduated >= 3`)
+          }
+
           where.push(`(${orCond.join(' OR ')})`)
         }
 
         if (!stage.includes('leech')) {
           where.push(/* sql */ `NOT (quiz.wrongStreak > 2)`)
         }
+
+        if (!includeExtra) {
+          where.push(/* sql */ `quiz.source IS NULL`)
+        }
+
+        where.push(
+          /* sql */ `quiz.direction IN (${direction.map((d) =>
+            params.set(d)
+          )})`,
+          /* sql */ `quiz.type IN (${type.map((d) => params.set(d))})`
+        )
 
         const now = +new Date()
         let quiz: typeof sQuizEntry.type[] = []
@@ -344,10 +376,14 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           )
           .all(params.get())
           .map(({ id, wrongStreak, nextReview, srsLevel }) => {
-            if (isDue || (!nextReview && nextReview < now)) {
-              quiz.push({ id, wrongStreak, nextReview, srsLevel })
+            if (!includeUndue) {
+              if (!nextReview || nextReview < now) {
+                quiz.push({ id, wrongStreak, nextReview, srsLevel })
+              } else {
+                upcoming.push({ id, wrongStreak, nextReview, srsLevel })
+              }
             } else {
-              upcoming.push({ id, wrongStreak, nextReview, srsLevel })
+              quiz.push({ id, wrongStreak, nextReview, srsLevel })
             }
           })
 
@@ -480,7 +516,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
               }
             }
 
-            if (subresult.source === 'extra') {
+            if (source !== 'extra' && subresult.source === 'extra') {
               try {
                 DbExtra.create([
                   {
@@ -489,24 +525,6 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
                 ])
               } catch (e) {
                 g.server.logger.error(e)
-              }
-            }
-
-            if (type === 'vocab' && !source) {
-              const rs = g.server.zh
-                .prepare(
-                  /* sql */ `
-            SELECT DISTINCT traditional
-            FROM vocab
-            WHERE simplified = @entry OR traditional = @entry
-            `
-                )
-                .all({ entry })
-
-              if (!rs.length) {
-                subresult.source = 'extra'
-              } else if (rs.some((r) => r.traditional)) {
-                dirs.push('te')
               }
             }
 
@@ -522,7 +540,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
                   entry,
                   type,
                   direction,
-                  source
+                  source: subresult.source
                 })
 
                 subresult.ids.push(r!.entry.id)
@@ -556,10 +574,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req, reply) => {
         const ids = req.query.ids.split(',')
         if (!req.query.ids || ids.length) {
-          reply.status(400)
-          return {
-            error: 'not enough ids'
-          }
+          throw { statusCode: 400, message: 'not enough ids' }
         }
 
         DbQuiz.delete(...ids)

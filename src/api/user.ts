@@ -8,13 +8,13 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     level: "json_extract(meta, '$.level') level",
     levelMin: "json_extract(meta, '$.levelMin') levelMin",
     forvo: "json_extract(meta, '$.forvo') forvo",
-    'settings.quiz': "json_extract(meta, '$.settings.quiz') settings.quiz",
+    'settings.quiz': "json_extract(meta, '$.settings.quiz') [settings.quiz]",
     'settings.level.whatToShow':
-      "json_extract(meta, '$.settings.level.whatToShow') settings.level.whatToShow",
+      "json_extract(meta, '$.settings.level.whatToShow') [settings.level.whatToShow]",
     'settings.sentence.min':
-      "json_extract(meta, '$.settings.sentence.min') settings.sentence.min",
+      "json_extract(meta, '$.settings.sentence.min') [settings.sentence.min]",
     'settings.sentence.max':
-      "json_extract(meta, '$.settings.sentence.max') settings.sentence.max"
+      "json_extract(meta, '$.settings.sentence.max') [settings.sentence.max]"
   }
 
   {
@@ -36,22 +36,16 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         }
       },
-      async (
-        req,
-        reply
-      ): Promise<typeof sResponse.type | { error: string }> => {
+      async (req): Promise<typeof sResponse.type> => {
         const { select } = req.query
 
         const sel = select
-          .split(' ')
+          .split(',')
           .map((s) => selMap[s.trim()])
           .filter((s) => s)
 
         if (!sel.length) {
-          reply.status(400)
-          return {
-            error: 'not enough select'
-          }
+          throw { statusCode: 400, message: 'not enough select' }
         }
 
         const result = g.server.db
@@ -71,8 +65,8 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     const sBody = S.shape({
       level: S.integer().minimum(1).maximum(60),
       levelMin: S.integer().minimum(1).maximum(60),
-      sentenceMin: S.integer().minimum(2).maximum(20),
-      sentenceMax: S.integer().minimum(2).maximum(20)
+      sentenceMin: S.integer().minimum(2).maximum(20).optional(),
+      sentenceMax: S.integer().minimum(2).maximum(20).optional()
     })
 
     const sResponse = S.shape({
@@ -92,26 +86,53 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req, reply): Promise<typeof sResponse.type> => {
-        g.server.db
-          .prepare(
-            /* sql */ `
-        UPDATE user
-        SET meta = json_set(
-          json_set(
-            json_set(
-              json_set(
-                meta,
-                '$.settings.sentence.max', @sentenceMax
-              ),
-              '$.settings.sentence.min', @sentenceMin
-            ),
-            '$.level', @level
-          ),
-          '$.levelMin', @levelMin
-        )
-        `
-          )
-          .run(req.query)
+        const { level, levelMin, sentenceMax, sentenceMin } = req.body
+
+        g.server.db.transaction(() => {
+          if (level) {
+            g.server.db
+              .prepare(
+                /* sql */ `
+            UPDATE user
+            SET meta = json_set(meta, '$.level', ?)
+            `
+              )
+              .run(level)
+          }
+
+          if (levelMin) {
+            g.server.db
+              .prepare(
+                /* sql */ `
+            UPDATE user
+            SET meta = json_set(meta, '$.levelMin', ?)
+            `
+              )
+              .run(levelMin)
+          }
+
+          if (sentenceMax) {
+            g.server.db
+              .prepare(
+                /* sql */ `
+            UPDATE user
+            SET meta = json_set(meta, '$.settings.sentence.max', ?)
+            `
+              )
+              .run(sentenceMax)
+          }
+
+          if (sentenceMin) {
+            g.server.db
+              .prepare(
+                /* sql */ `
+            UPDATE user
+            SET meta = json_set(meta, '$.settings.sentence.min', ?)
+            `
+              )
+              .run(sentenceMin)
+          }
+        })()
 
         reply.status(201)
         return {

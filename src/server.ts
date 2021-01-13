@@ -1,10 +1,14 @@
+import fs from 'fs'
 import path from 'path'
+import qs from 'querystring'
+import stream from 'stream'
 
 import sqlite from 'better-sqlite3'
 import ON_DEATH from 'death'
 import fastify, { FastifyInstance } from 'fastify'
 import fastifyStatic from 'fastify-static'
 import pino from 'pino'
+import stripANSIStream from 'strip-ansi-stream'
 
 import apiRouter from './api'
 import { Database } from './db'
@@ -24,15 +28,35 @@ interface IServerAssets {
 
 export class Server implements IServerOptions, IServerAssets {
   static async init(opts: IServerOptions) {
-    const zh = sqlite(path.join(opts.assetsDir, 'zh.db'), { readonly: true })
-    const db = sqlite(path.join(opts.userDataDir, 'data.db'))
+    const logThrough = new stream.PassThrough()
 
     const logger = pino(
       {
-        prettyPrint: true
-      }
-      // fs.createWriteStream(path.join(opts.userDataDir, 'server.log'))
+        prettyPrint: true,
+        serializers: {
+          req(req) {
+            const [url, q] = req.url.split(/\?(.+)$/)
+            const query = q ? qs.parse(q) : undefined
+
+            return { method: req.method, url, query, hostname: req.hostname }
+          }
+        }
+      },
+      logThrough
     )
+
+    logThrough
+      .pipe(stripANSIStream())
+      .pipe(fs.createWriteStream(path.join(opts.userDataDir, 'server.log')))
+    logThrough.pipe(process.stdout)
+
+    const zh = sqlite(path.join(opts.assetsDir, 'zh.db'), { readonly: true })
+    const db = sqlite(path.join(opts.userDataDir, 'data.db'), {
+      verbose: (msg, params) => {
+        logger.debug({ msg, params })
+      }
+    })
+
     const app = fastify({
       logger
       // querystringParser: (s) => {
@@ -59,6 +83,10 @@ export class Server implements IServerOptions, IServerAssets {
 
     app.register(apiRouter, {
       prefix: '/api'
+    })
+
+    app.get('/server/settings', async () => {
+      return {}
     })
 
     await new Promise<void>((resolve, reject) => {

@@ -160,34 +160,32 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
   {
     {
-      const sQuerystring = S.shape({
-        level: S.integer().minimum(1).maximum(60),
-        levelMin: S.integer().minimum(1).maximum(60)
-      })
-
       const sResponse = S.shape({
         result: S.string(),
         english: S.string(),
         level: S.integer()
       })
 
-      f.get<{
-        Querystring: typeof sQuerystring.type
-      }>(
+      f.get(
         '/random',
         {
           schema: {
-            querystring: sQuerystring.valueOf(),
             response: {
               200: sResponse.valueOf()
             }
           }
         },
-        async (
-          req,
-          reply
-        ): Promise<typeof sResponse.type | { error: string }> => {
-          const { level, levelMin } = req.query
+        async (): Promise<typeof sResponse.type> => {
+          const { level, levelMin } = g.server.db
+            .prepare(
+              /* sql */ `
+          SELECT
+            json_extract(meta, '$.level') [level],
+            json_extract(meta, '$.levelMin') levelMin
+          FROM user
+          `
+            )
+            .get()
 
           const entries: string[] = g.server.db
             .prepare(
@@ -200,26 +198,11 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             .all()
             .map(({ entry }) => entry)
 
-          const params = {
-            map: new Map<number, any>(),
-            set(v: any) {
-              const i = this.map.size + 1
-              this.map.set(i, v)
-              return `$${i}`
-            },
-            get() {
-              return Object.fromEntries(this.map)
-            }
-          }
-
           const where: string[] = [
-            `vocab_level >= ${params.set(
-              levelMin
-            )} AND vocab_level <= ${params.set(level)}`
+            `vocab_level >= @levelMin AND vocab_level <= @level`
           ]
-          if (entries.length) {
-            where.push(`entry NOT IN (${entries.map((it) => params.set(it))})`)
-          }
+
+          const entriesSet = new Set(entries)
 
           let r = g.server.zh
             .prepare(
@@ -229,10 +212,11 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           WHERE ${where.join(' AND ')}
           `
             )
-            .all(params.get())
+            .all({ level, levelMin })
+            .filter(({ result }) => !entriesSet.has(result))
 
           if (!r.length) {
-            where.pop()
+            where.shift()
 
             r = g.server.zh
               .prepare(
@@ -242,14 +226,12 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             WHERE ${where.join(' AND ')}
             `
               )
-              .all(params.get())
+              .all({ level, levelMin })
+              .filter(({ result }) => !entriesSet.has(result))
           }
 
           if (!r.length) {
-            reply.status(201)
-            return {
-              error: 'no matching entries found'
-            }
+            throw { statusCode: 404, message: 'no matching entries found' }
           }
 
           return r[Math.floor(Math.random() * r.length)]

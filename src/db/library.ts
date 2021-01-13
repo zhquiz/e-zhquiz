@@ -47,7 +47,7 @@ export class DbLibrary {
     const r = g.server.db
       .prepare(
         /* sql */ `
-      SELECT COUNT(*) FROM [${this.tableName}] WHERE source = 'zh'
+      SELECT * FROM [${this.tableName}] WHERE source = 'zh'
     `
       )
       .get()
