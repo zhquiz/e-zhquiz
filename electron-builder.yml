@@ -4,7 +4,8 @@ protocols:
   schemes:
   - app
 asarUnpack:
-- server/
+- assets/
+- node_modules/nodejieba/dict/*
 # afterPack: "./scripts/include-go.js"
 win:
   target:

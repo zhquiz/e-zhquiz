@@ -7,6 +7,7 @@ import sqlite from 'better-sqlite3'
 import ON_DEATH from 'death'
 import fastify, { FastifyInstance } from 'fastify'
 import fastifyStatic from 'fastify-static'
+import jieba from 'nodejieba'
 import pino from 'pino'
 import stripANSIStream from 'strip-ansi-stream'
 
@@ -28,6 +29,29 @@ interface IServerAssets {
 
 export class Server implements IServerOptions, IServerAssets {
   static async init(opts: IServerOptions) {
+    jieba.load({
+      dict: path.join(
+        opts.assetsDir,
+        '../node_modules/nodejieba/dict/jieba.dict.utf8'
+      ),
+      userDict: path.join(
+        opts.assetsDir,
+        '../node_modules/nodejieba/dict/user.dict.utf8'
+      ),
+      hmmDict: path.join(
+        opts.assetsDir,
+        '../node_modules/nodejieba/dict/hmm_model.utf8'
+      ),
+      idfDict: path.join(
+        opts.assetsDir,
+        '../node_modules/nodejieba/dict/idf.utf8'
+      ),
+      stopWordDict: path.join(
+        opts.assetsDir,
+        '../node_modules/nodejieba/dict/stop_words.utf8'
+      )
+    })
+
     const logThrough = new stream.PassThrough()
 
     const logger = pino(
@@ -51,11 +75,7 @@ export class Server implements IServerOptions, IServerAssets {
     logThrough.pipe(process.stdout)
 
     const zh = sqlite(path.join(opts.assetsDir, 'zh.db'), { readonly: true })
-    const db = sqlite(path.join(opts.userDataDir, 'data.db'), {
-      verbose: (msg, params) => {
-        logger.debug({ msg, params })
-      }
-    })
+    const db = sqlite(path.join(opts.userDataDir, 'data.db'))
 
     const app = fastify({
       logger
@@ -87,6 +107,12 @@ export class Server implements IServerOptions, IServerAssets {
 
     app.get('/server/settings', async () => {
       return {}
+    })
+
+    app.setNotFoundHandler((req, reply) => {
+      if (!req.url.startsWith('/api/')) {
+        reply.status(200).sendFile(g.getPath('public', 'index.html'))
+      }
     })
 
     await new Promise<void>((resolve, reject) => {

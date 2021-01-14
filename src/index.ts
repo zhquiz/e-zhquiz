@@ -6,10 +6,18 @@ import getPort from 'get-port'
 
 import { Server } from './server'
 
+declare global {
+  namespace NodeJS {
+    interface Global {
+      win: BrowserWindow | null
+    }
+  }
+}
+
 contextMenu()
 
 let server: Server | null = null
-let win: BrowserWindow | null = null
+global.win = null
 
 async function initServer() {
   server = await Server.init({
@@ -18,8 +26,8 @@ async function initServer() {
     assetsDir: getAsarUnpackedPath('assets')
   })
 
-  if (win && !win.webContents.getURL().startsWith('app://')) {
-    win.loadURL('app://./random')
+  if (global.win && !global.win.webContents.getURL().startsWith('app://')) {
+    global.win.loadURL(`http://localhost:${server.port}/etabs.html`)
   }
 
   app.once('before-quit', () => {
@@ -32,7 +40,7 @@ async function initServer() {
 initServer()
 
 function createWindow() {
-  win = new BrowserWindow({
+  global.win = new BrowserWindow({
     width: 1024,
     height: 768,
     webPreferences: {
@@ -41,18 +49,18 @@ function createWindow() {
       contextIsolation: false
     }
   })
-  win.maximize()
+  global.win.maximize()
 
   if (server) {
-    win.loadURL('app://./random')
+    global.win.loadURL(`http://localhost:${server.port}/etabs.html`)
   } else {
-    win.loadFile('public/loading/index.html')
+    global.win.loadFile('public/loading/index.html')
   }
 
-  win.on('close', () => {
-    if (win) {
-      win.webContents.send('app-close')
-      win = null
+  global.win.on('close', () => {
+    if (global.win) {
+      global.win.webContents.send('app-close')
+      global.win = null
     }
   })
 }
@@ -61,12 +69,14 @@ app.whenReady().then(() => {
   const isRegistered = protocol.registerHttpProtocol('app', (req, cb) => {
     if (server) {
       const { uploadData, ...res } = req
+      const url = req.url.replace(
+        /^app:\/\/[^/]+/,
+        `http://localhost:${server.port}`
+      )
+      console.log(url)
       cb({
         ...res,
-        url: req.url.replace(
-          /^app:\/\/[^/]+/,
-          `http://localhost:${server.port}`
-        )
+        url
       })
     }
   })

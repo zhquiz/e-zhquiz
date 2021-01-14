@@ -18,14 +18,17 @@
     "assets/"
   ],
   "scripts": {
+    "start": "electron .",
     "postinstall": "electron-builder install-app-deps",
     "dev": "run-p dev:*",
     "dev:e": "nodemon src/server.ts",
-    "dev:ui": "cd ../../submodules/ui && SERVER_PORT=5000 yarn nuxt-ts",
+    "dev:ui": "cd ../ui && SERVER_PORT=5000 yarn nuxt-ts",
+    "watch": "run-p watch:*",
     "watch:e": "yarn build:e --watch",
+    "watch:ui": "cd ../ui && IS_ELECTRON=1 yarn build --watch",
     "build": "run-s 'build:*'",
     "build:e": "tsc -P src/tsconfig.json",
-    "build:ui": "cd ../../submodules/ui && OUTDIR=../../submodules/electron/public yarn build --modern",
+    "build:ui": "cd ../ui && IS_ELECTRON=1 yarn build",
     "dist": "electron-builder -wml",
     "ts": "TS_NODE_COMPILER_OPTIONS='{\"noImplicitAny\":false}' electron -r ts-node/register"
   },
@@ -49,6 +52,7 @@
     "node-gtts": "^2.0.2",
     "nodejieba": "^2.5.1",
     "pino": "^6.10.0",
+    "pino-pretty": "^4.3.0",
     "strip-ansi-stream": "^1.0.0"
   },
   "devDependencies": {
@@ -63,7 +67,6 @@
     "import-sort-parser-typescript": "^6.0.0",
     "nodemon": "^2.0.7",
     "npm-run-all": "^4.1.5",
-    "pino-pretty": "^4.3.0",
     "prettier": "^2.2.1",
     "ts-node": "^9.1.1",
     "typescript": "^4.1.3",
