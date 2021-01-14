@@ -33,15 +33,17 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { entry } = req.query
 
-        const r = g.server.zh
-          .prepare(
-            /* sql */ `
-        SELECT chinese, pinyin, english
-        FROM sentence
-        WHERE chinese = @entry
-        `
-          )
-          .get({ entry })
+        const r = await g.server.zh.get<
+          { $entry: string },
+          { chinese: string; pinyin: string; english: string }
+        >(
+          /* sql */ `
+          SELECT chinese, pinyin, english
+          FROM sentence
+          WHERE chinese = $entry
+          `,
+          { $entry: entry }
+        )
 
         if (!r) {
           throw { statusCode: 404, message: 'not found' }
@@ -75,73 +77,115 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (): Promise<typeof sResponse.type> => {
-        const { sentenceMin, sentenceMax, level, levelMin } = g.server.db
-          .prepare(
+        const { sentenceMin, sentenceMax, level, levelMin } =
+          (await g.server.db.get<
+            any[],
+            {
+              sentenceMin: number | null
+              sentenceMax: number | null
+              level: number | null
+              levelMin: number | null
+            }
+          >(
             /* sql */ `
-        SELECT
-          json_extract(meta, '$.settings.sentence.min') sentenceMin,
-          json_extract(meta, '$.settings.sentence.max') sentenceMax,
-          json_extract(meta, '$.level') [level],
-          json_extract(meta, '$.levelMin') levelMin
-        FROM user
-        `
-          )
-          .get()
+          SELECT
+            json_extract(meta, '$.settings.sentence.min') sentenceMin,
+            json_extract(meta, '$.settings.sentence.max') sentenceMax,
+            json_extract(meta, '$.level') [level],
+            json_extract(meta, '$.levelMin') levelMin
+          FROM user
+        `,
+            []
+          )) || {}
 
-        const entries: string[] = g.server.db
-          .prepare(
+        const entries = await g.server.db
+          .all<any[], { entry: string }>(
             /* sql */ `
-        SELECT [entry]
-        FROM quiz
-        WHERE [type] = 'sentence' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL
-        `
+            SELECT [entry]
+            FROM quiz
+            WHERE [type] = 'sentence' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL
+            `,
+            []
           )
-          .all()
-          .map(({ entry }) => entry)
+          .then((rs) => rs.map(({ entry }) => entry))
 
-        const where: string[] = [`level >= @levelMin AND level <= @level`]
+        const where: string[] = [`level >= $levelMin AND level <= $level`]
 
         if (sentenceMin) {
-          where.push(`length(chinese) >= @sentenceMin`)
+          where.push(`length(chinese) >= $sentenceMin`)
         }
 
         if (sentenceMax) {
-          where.push(`length(chinese) <= @sentenceMax`)
+          where.push(`length(chinese) <= $sentenceMax`)
         }
 
         const entriesSet = new Set(entries)
 
-        let r = g.server.zh
-          .prepare(
-            /* sql */ `
+        console.log(/* sql */ `
         SELECT chinese result, english, [level]
         FROM sentence
         WHERE ${where.join(' AND ')}
-        `
-          )
-          .all({ level, levelMin, sentenceMin, sentenceMax })
-          .filter(({ result }) => !entriesSet.has(result))
+        `)
 
-        if (!r.length) {
+        let rs = await g.server.zh
+          .all<
+            {
+              $level: number
+              $levelMin: number
+              $sentenceMin: number
+              $sentenceMax: number
+            },
+            { result: string; english: string; level: number }
+          >(
+            /* sql */ `
+            SELECT chinese result, english, [level]
+            FROM sentence
+            WHERE ${where.join(' AND ')}
+            `,
+            {
+              $level: level || 60,
+              $levelMin: levelMin || 1,
+              $sentenceMin: sentenceMin || 1,
+              $sentenceMax: sentenceMax || 50
+            }
+          )
+          .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
+
+        if (!rs.length) {
           where.pop()
 
-          r = g.server.zh
-            .prepare(
+          rs = await g.server.zh
+            .all<
+              {
+                $level: number
+                $levelMin: number
+                $sentenceMin: number
+                $sentenceMax: number
+              },
+              { result: string; english: string; level: number }
+            >(
               /* sql */ `
-          SELECT chinese result, english, [level]
-          FROM sentence
-          WHERE ${where.join(' AND ')}
-          `
+              SELECT chinese result, english, [level]
+              FROM sentence
+              WHERE ${where.join(' AND ')}
+              `,
+              {
+                $level: level || 60,
+                $levelMin: levelMin || 1,
+                $sentenceMin: sentenceMin || 1,
+                $sentenceMax: sentenceMax || 50
+              }
             )
-            .all({ level, levelMin, sentenceMin, sentenceMax })
-            .filter(({ result }) => !entriesSet.has(result))
+            .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
         }
 
-        if (!r.length) {
+        const r = rs[Math.floor(Math.random() * rs.length)]
+
+        if (!r) {
           throw { statusCode: 404, message: 'no matching entries found' }
         }
 
-        return r[Math.floor(Math.random() * r.length)]
+        return r
       }
     )
   }
@@ -181,62 +225,114 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const where: string[] = []
         if (q) {
-          where.push(/* sql */ `chinese LIKE '%'||@q||'%'`)
+          where.push(/* sql */ `chinese LIKE '%'||$q||'%'`)
         }
 
-        const { sentenceMin, sentenceMax, level, levelMin } = g.server.db
-          .prepare(
+        const { sentenceMin, sentenceMax, level, levelMin } =
+          (await g.server.db.get<
+            any[],
+            {
+              sentenceMin: number | null
+              sentenceMax: number | null
+              level: number | null
+              levelMin: number | null
+            }
+          >(
             /* sql */ `
-        SELECT
-          json_extract(meta, '$.settings.sentence.min') sentenceMin,
-          json_extract(meta, '$.settings.sentence.max') sentenceMax
-        FROM user
-        `
-          )
-          .get()
+            SELECT
+              json_extract(meta, '$.settings.sentence.min') sentenceMin,
+              json_extract(meta, '$.settings.sentence.max') sentenceMax,
+              json_extract(meta, '$.level') [level],
+              json_extract(meta, '$.levelMin') levelMin
+            FROM user
+            `,
+            []
+          )) || {}
 
         if (sentenceMin) {
-          where.push(/* sql */ `length(chinese) >= @sentenceMin`)
+          where.push(/* sql */ `length(chinese) >= $sentenceMin`)
         }
 
         if (sentenceMax) {
-          where.push(/* sql */ `length(chinese) <= @sentenceMax`)
+          where.push(/* sql */ `length(chinese) <= $sentenceMax`)
         }
 
         const { count = 0 } =
-          g.server.zh
-            .prepare(
-              /* sql */ `
-        SELECT COUNT(*) [count] FROM sentence
-        WHERE ${where.join(' AND ') || 'TRUE'}
-        `
-            )
-            .get({ q, level, levelMin, sentenceMax, sentenceMin }) || {}
+          (await g.server.zh.get<
+            {
+              $q: string
+              $level: number
+              $levelMin: number
+              $sentenceMax: number
+              $sentenceMin: number
+            },
+            { count: number }
+          >(
+            /* sql */ `
+            SELECT COUNT(*) [count] FROM sentence
+            WHERE ${where.join(' AND ') || 'TRUE'}
+            `,
+            {
+              $q: q || '',
+              $level: level || 60,
+              $levelMin: levelMin || 1,
+              $sentenceMax: sentenceMax || 50,
+              $sentenceMin: sentenceMin || 1
+            }
+          )) || {}
 
         const result: {
           chinese: string
           english: string
-        }[] = g.server.zh
-          .prepare(
-            /* sql */ `
-        SELECT chinese, english FROM sentence
-        WHERE ${where.join(' AND ') || 'TRUE'}
-        ORDER BY frequency DESC
-        LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-        `
-          )
-          .all({ q, level, levelMin, sentenceMax, sentenceMin })
-
-        if (generate && result.length < generate) {
-          const additional = g.server.db
-            .prepare(
-              /* sql */ `
+        }[] = await g.server.zh.all<
+          {
+            $q: string
+            $level: number
+            $levelMin: number
+            $sentenceMax: number
+            $sentenceMin: number
+          },
+          { chinese: string; english: string }
+        >(
+          /* sql */ `
           SELECT chinese, english FROM sentence
           WHERE ${where.join(' AND ') || 'TRUE'}
-          LIMIT 10
-          `
-            )
-            .all({ q, level, levelMin, sentenceMax, sentenceMin })
+          ORDER BY frequency DESC
+          LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
+          `,
+          {
+            $q: q || '',
+            $level: level || 60,
+            $levelMin: levelMin || 1,
+            $sentenceMax: sentenceMax || 50,
+            $sentenceMin: sentenceMin || 1
+          }
+        )
+
+        if (generate && result.length < generate) {
+          const additional = await g.server.db.all<
+            {
+              $q: string
+              $level: number
+              $levelMin: number
+              $sentenceMax: number
+              $sentenceMin: number
+            },
+            { chinese: string; english: string }
+          >(
+            /* sql */ `
+            SELECT chinese, english FROM sentence
+            WHERE ${where.join(' AND ') || 'TRUE'}
+            LIMIT 10
+            `,
+            {
+              $q: q || '',
+              $level: level || 60,
+              $levelMin: levelMin || 1,
+              $sentenceMax: sentenceMax || 50,
+              $sentenceMin: sentenceMin || 1
+            }
+          )
 
           result.push(...additional)
 
@@ -268,13 +364,24 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
             scraped = scraped.filter((el) => el && el.chinese && el.english)
 
-            const stmt = g.server.db.prepare(/* sql */ `
-            INSERT INTO sentence (chinese, english) VALUES (@chinese, @english)
+            const stmt = await g.server.db.prepare<{
+              $chinese: string
+              $english: string
+            }>(/* sql */ `
+            INSERT INTO sentence (chinese, english) VALUES ($chinese, $english)
             ON CONFLICT DO NOTHING
             `)
-            g.server.db.transaction(() => {
-              scraped.map((s) => stmt.run(s))
-            })()
+
+            await g.server.db.transaction(async () => {
+              return Promise.all(
+                scraped.map((s) =>
+                  stmt.run({
+                    $chinese: s.chinese,
+                    $english: s.english
+                  })
+                )
+              )
+            })
 
             result.push(...scraped)
           }

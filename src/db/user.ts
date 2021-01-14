@@ -28,8 +28,8 @@ export type IDbUserMeta = typeof sDbUserMeta.type
 export class DbUser {
   static tableName = 'user'
 
-  static init() {
-    g.server.db.exec(/* sql */ `
+  static async init() {
+    await g.server.db.exec(/* sql */ `
       CREATE TABLE IF NOT EXISTS [${this.tableName}] (
         id          INT PRIMARY KEY DEFAULT 1,
         createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),

@@ -42,42 +42,43 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         if (q) {
           where.push(/* sql */ `
           library.id IN (
-            SELECT id FROM library_q WHERE library_q MATCH @q
+            SELECT id FROM library_q WHERE library_q MATCH $q
           )
           `)
         }
 
         const { count = 0 } =
-          g.server.db
-            .prepare(
-              /* sql */ `
+          (await g.server.db.get<{ $q: string }, { count: number }>(
+            /* sql */ `
           SELECT COUNT(*) [count]
           FROM library
           WHERE ${where.join(' AND ') || 'TRUE'}
-        `
-            )
-            .get({ q }) || {}
+        `,
+            { $q: q || '' }
+          )) || {}
 
-        const result = g.server.db
-          .prepare(
+        const result = await g.server.db
+          .all<{ $q: string }, { id: string; title: string; entries: string }>(
             /* sql */ `
-          SELECT id, title, entries
-          FROM library
-          ${
-            q
-              ? /* sql */ `LEFT JOIN library_q ON library_q.id = library.id`
-              : ''
-          }
-          WHERE ${where.join(' AND ') || 'TRUE'}
-          ORDER BY ${q ? 'rank GROUP BY library.id' : 'library.updatedAt'}
-          LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-        `
+            SELECT id, title, entries
+            FROM library
+            ${
+              q
+                ? /* sql */ `LEFT JOIN library_q ON library_q.id = library.id`
+                : ''
+            }
+            WHERE ${where.join(' AND ') || 'TRUE'}
+            ORDER BY ${q ? 'rank GROUP BY library.id' : 'library.updatedAt'}
+            LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
+          `,
+            { $q: q || '' }
           )
-          .all({ q })
-          .map((r) => ({
-            ...r,
-            entries: JSON.parse(r.entries)
-          }))
+          .then((rs) =>
+            rs.map((r) => ({
+              ...r,
+              entries: JSON.parse(r.entries)
+            }))
+          )
 
         return {
           result,
@@ -110,7 +111,9 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req): Promise<typeof sResponse.type> => {
-        const [r] = DbLibrary.create([req.body])
+        const [r] = await g.server.db.transaction(() =>
+          DbLibrary.create([req.body])
+        )
 
         return {
           id: r!.entry.id
@@ -151,12 +154,14 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req): Promise<typeof sResponse.type> => {
-        DbLibrary.update([
-          {
-            ...req.body,
-            id: req.query.id
-          }
-        ])
+        g.server.db.transaction(() =>
+          DbLibrary.update([
+            {
+              ...req.body,
+              id: req.query.id
+            }
+          ])
+        )
 
         return {
           result: 'updated'
@@ -187,7 +192,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (req): Promise<typeof sResponse.type> => {
-        DbLibrary.delete([req.query.id])
+        g.server.db.transaction(() => DbLibrary.delete([req.query.id]))
 
         return {
           result: 'deleted'

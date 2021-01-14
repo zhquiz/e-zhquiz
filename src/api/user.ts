@@ -48,13 +48,16 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           throw { statusCode: 400, message: 'not enough select' }
         }
 
-        const result = g.server.db
-          .prepare(
-            /* sql */ `
-        SELECT ${sel} FROM user
-        `
-          )
-          .get()
+        const result = await g.server.db.get(
+          /* sql */ `
+          SELECT ${sel} FROM user
+          `,
+          []
+        )
+
+        if (!result) {
+          throw { statusCode: 401, message: 'not logged in' }
+        }
 
         return result
       }
@@ -88,51 +91,47 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req, reply): Promise<typeof sResponse.type> => {
         const { level, levelMin, sentenceMax, sentenceMin } = req.body
 
-        g.server.db.transaction(() => {
+        await g.server.db.transaction(async () => {
           if (level) {
-            g.server.db
-              .prepare(
-                /* sql */ `
-            UPDATE user
-            SET meta = json_set(meta, '$.level', ?)
-            `
-              )
-              .run(level)
+            await g.server.db.run(
+              /* sql */ `
+              UPDATE user
+              SET meta = json_set(meta, '$.level', ?)
+              `,
+              [level]
+            )
           }
 
           if (levelMin) {
-            g.server.db
-              .prepare(
-                /* sql */ `
-            UPDATE user
-            SET meta = json_set(meta, '$.levelMin', ?)
-            `
-              )
-              .run(levelMin)
+            await g.server.db.run(
+              /* sql */ `
+              UPDATE user
+              SET meta = json_set(meta, '$.levelMin', ?)
+              `,
+              [levelMin]
+            )
           }
 
           if (sentenceMax) {
-            g.server.db
-              .prepare(
-                /* sql */ `
-            UPDATE user
-            SET meta = json_set(meta, '$.settings.sentence.max', ?)
-            `
-              )
-              .run(sentenceMax)
+            await g.server.db.run(
+              /* sql */ `
+              UPDATE user
+              SET meta = json_set(meta, '$.settings.sentence.max', ?)
+              `,
+              [sentenceMax]
+            )
           }
 
           if (sentenceMin) {
-            g.server.db
-              .prepare(
-                /* sql */ `
-            UPDATE user
-            SET meta = json_set(meta, '$.settings.sentence.min', ?)
-            `
-              )
-              .run(sentenceMin)
+            await g.server.db.run(
+              /* sql */ `
+              UPDATE user
+              SET meta = json_set(meta, '$.settings.sentence.min', ?)
+              `,
+              [sentenceMin]
+            )
           }
-        })()
+        })
 
         reply.status(201)
         return {

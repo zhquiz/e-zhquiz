@@ -1,3 +1,4 @@
+import toPinyin from 'chinese-to-pinyin'
 import { Ulid } from 'id128'
 import { DurationUnit, addDate } from 'native-duration'
 import jieba from 'nodejieba'
@@ -37,8 +38,8 @@ export interface IDbQuiz {
 export class DbQuiz {
   static tableName = 'quiz'
 
-  static init() {
-    g.server.db.exec(/* sql */ `
+  static async init() {
+    await g.server.db.exec(/* sql */ `
       CREATE TABLE IF NOT EXISTS [${this.tableName}] (
         id          TEXT PRIMARY KEY,
         createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
@@ -89,83 +90,89 @@ export class DbQuiz {
     `)
   }
 
-  static create(...items: IDbQuiz[]) {
+  static async create(...items: IDbQuiz[]) {
     const out: DbQuiz[] = []
 
-    const stmt = g.server.db.prepare<{
-      id: string
-      entry: string
-      type: string
-      direction: string
-      source: string | null
+    const stmt = await g.server.db.prepare<{
+      $id: string
+      $entry: string
+      $type: string
+      $direction: string
+      $source: string | null
     }>(/* sql */ `
       INSERT INTO [${this.tableName}] (id, [entry], [type], direction, source)
-      VALUES (@id, @entry, @type, @direction, @source)
+      VALUES ($id, $entry, $type, $direction, $source)
     `)
 
-    const stmtQ = g.server.db.prepare<{
-      id: string
-      entry: string
-      pinyin: string | null
-      english: string
-      type: string
-      direction: string
-      description: string
-      tag: string
+    const stmtQ = await g.server.db.prepare<{
+      $id: string
+      $entry: string
+      $pinyin_auto: string
+      $english: string
+      $type: string
+      $direction: string
+      $description: string
+      $tag: string
     }>(/* sql */ `
       INSERT INTO ${this.tableName}_q (id, [entry], pinyin, english, [type], direction, [description], tag)
       VALUES (
-        @id,
-        @entry,
-        COALESCE(@pinyin,  to_pinyin(@entry)),
-        @english,
-        @type,
-        @direction,
-        @description,
-        @tag
+        $id,
+        $entry,
+        $pinyin_auto,
+        $english,
+        $type,
+        $direction,
+        $description,
+        $tag
       )
     `)
 
-    const stmtEng = g.server.zh.prepare(/* sql */ `
-    SELECT english
-    FROM vocab
-    WHERE simplified = @entry OR traditional = @entry
+    const stmtEng = await g.server.db.prepare<{
+      $entry: string
+    }>(/* sql */ `
+      SELECT english
+      FROM vocab
+      WHERE simplified = $entry OR traditional = $entry
     `)
 
-    items.map((it) => {
+    for (const it of items) {
       const id = Ulid.generate().toCanonical()
 
       stmt.run({
-        id,
-        entry: it.entry,
-        type: it.type,
-        direction: it.direction,
-        source: it.source || null
+        $id: id,
+        $entry: it.entry,
+        $type: it.type,
+        $direction: it.direction,
+        $source: it.source || null
       })
 
       stmtQ.run({
-        id,
-        entry: it.entry,
-        pinyin: it.pinyin
+        $id: id,
+        $entry: it.entry,
+        $pinyin_auto: it.pinyin
           ? it.pinyin
               .split(' ')
               .map((s) => s.replace(/\d$/, ''))
               .join(' ')
-          : null,
-        english:
+          : toPinyin(it.entry, { keepRest: true, toneToNumber: true }),
+        $english:
           it.english ||
-          jieba
-            .cut(it.entry)
-            .flatMap((s) => {
-              return stmtEng.all({ entry: s })
-            })
-            .map(({ english }) => english)
+          (
+            await Promise.all(
+              jieba.cut(it.entry).map(async (s) => {
+                return stmtEng
+                  .all({ $entry: s })
+                  .then(({ data }) => data.map(({ english }) => english))
+              })
+            )
+          )
+            .flat()
             .join('; ') ||
           'unknown',
-        type: it.type,
-        direction: it.direction,
-        description: it.description || '',
-        tag: [it.tag || '', it.source || ''].filter((it) => it).join(' ')
+        $type: it.type,
+        $direction: it.direction,
+        $description: it.description || '',
+        $tag: [it.tag || '', it.source || ''].filter((it) => it).join(' ')
       })
 
       out.push(
@@ -174,33 +181,38 @@ export class DbQuiz {
           id
         })
       )
-    })
+
+      await stmtQ.finalize()
+    }
+
+    await stmt.finalize()
+    await stmtEng.finalize()
 
     return out
   }
 
-  static delete(...ids: string[]) {
+  static async delete(ids: string[]) {
     if (ids.length < 1) {
       throw new Error('nothing to delete')
     }
 
-    g.server.db
+    await g.server.db
       .prepare(
         /* sql */ `
     DELETE FROM ${this.tableName}_q
     WHERE id IN (${Array(ids.length).fill('?')})
     `
       )
-      .run(...ids)
+      .then((s) => s.run(ids))
 
-    g.server.db
+    await g.server.db
       .prepare(
         /* sql */ `
     DELETE FROM [${this.tableName}]
     WHERE id IN (${Array(ids.length).fill('?')})
     `
       )
-      .run(...ids)
+      .then((s) => s.run(ids))
   }
 
   constructor(public entry: Partial<IDbQuiz> & { id: string }) {
@@ -221,7 +233,7 @@ export class DbQuiz {
     }
   }
 
-  updateSRSLevel(df: number) {
+  async updateSRSLevel(df: number) {
     if (
       [
         this.entry.srsLevel,
@@ -232,14 +244,16 @@ export class DbQuiz {
       ].some((it) => typeof it === 'undefined')
     ) {
       const r = g.server.db
-        .prepare(
+        .prepare<{
+          $id: string
+        }>(
           /* sql */ `
       SELECT srsLevel, rightStreak, wrongStreak, maxRight, maxWrong
       FROM [${DbQuiz.tableName}]
-      WHERE id = @id
+      WHERE id = $id
     `
         )
-        .get({ id: this.entry.id })
+        .then((s) => s.get({ $id: this.entry.id }))
 
       if (!r) {
         throw new Error('entry not found by id')
@@ -279,7 +293,8 @@ export class DbQuiz {
       }
     }
 
-    this.entry.srsLevel = (this.entry.srsLevel || 0) + df
+    this.entry.srsLevel = this.entry.srsLevel || 0
+    this.entry.srsLevel = this.entry.srsLevel + df
     if (this.entry.srsLevel < 0) {
       this.entry.srsLevel = 0
     }
@@ -293,49 +308,51 @@ export class DbQuiz {
       this.entry.nextReview = getNextReview(-1)
     }
 
-    g.server.db
+    await g.server.db
       .prepare<{
-        id: string
-        srsLevel: number
-        nextReview: number
-        lastRight: number | null
-        lastWrong: number | null
-        rightStreak: number
-        wrongStreak: number
-        maxRight: number
-        maxWrong: number
+        $id: string
+        $srsLevel: number
+        $nextReview: number
+        $lastRight: number | null
+        $lastWrong: number | null
+        $rightStreak: number
+        $wrongStreak: number
+        $maxRight: number
+        $maxWrong: number
       }>(
         /* sql */ `
       UPDATE [${DbQuiz.tableName}]
       SET
-        srsLevel = @srsLevel,
-        nextReview = @nextReview,
-        lastRight = @lastRight,
-        lastWrong = @lastWrong,
-        rightStreak = @rightStreak,
-        wrongStreak = @wrongStreak,
-        maxRight = @maxRight,
-        maxWrong = @maxWrong
-      WHERE id = @id
+        srsLevel = $srsLevel,
+        nextReview = $nextReview,
+        lastRight = $lastRight,
+        lastWrong = $lastWrong,
+        rightStreak = $rightStreak,
+        wrongStreak = $wrongStreak,
+        maxRight = $maxRight,
+        maxWrong = $maxWrong
+      WHERE id = $id
     `
       )
-      .run({
-        id: this.entry.id,
-        srsLevel: this.entry.srsLevel,
-        nextReview: +this.entry.nextReview,
-        lastRight:
-          typeof this.entry.lastRight !== 'undefined'
-            ? +this.entry.lastRight
-            : null,
-        lastWrong:
-          typeof this.entry.lastWrong !== 'undefined'
-            ? +this.entry.lastWrong
-            : null,
-        rightStreak: this.entry.rightStreak,
-        wrongStreak: this.entry.wrongStreak,
-        maxRight: this.entry.maxRight,
-        maxWrong: this.entry.maxWrong
-      })
+      .then((s) =>
+        s.run({
+          $id: this.entry.id,
+          $srsLevel: this.entry.srsLevel!,
+          $nextReview: +this.entry.nextReview!,
+          $lastRight:
+            typeof this.entry.lastRight !== 'undefined'
+              ? +this.entry.lastRight
+              : null,
+          $lastWrong:
+            typeof this.entry.lastWrong !== 'undefined'
+              ? +this.entry.lastWrong
+              : null,
+          $rightStreak: this.entry.rightStreak!,
+          $wrongStreak: this.entry.wrongStreak!,
+          $maxRight: this.entry.maxRight!,
+          $maxWrong: this.entry.maxWrong!
+        })
+      )
 
     return this.entry
   }
