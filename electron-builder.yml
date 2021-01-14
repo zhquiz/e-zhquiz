@@ -7,6 +7,7 @@ asarUnpack:
 - assets/
 - node_modules/nodejieba/dict/*
 # afterPack: "./scripts/include-go.js"
+extends: null
 win:
   target:
   - nsis
