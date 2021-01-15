@@ -31,7 +31,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/q',
       {
@@ -61,6 +61,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
@@ -123,7 +124,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {
@@ -139,6 +140,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
@@ -191,8 +193,8 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.put<{
-      Querystring: typeof sQuerystring.type
-      Body: typeof sBody.type
+      Querystring: typeof sQuerystring.type;
+      Body: typeof sBody.type;
     }>(
       '/',
       {
@@ -299,6 +301,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         )
 
         return {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           id: r!.entry.id
         }
       }
@@ -324,8 +327,8 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.patch<{
-      Querystring: typeof sQuerystring.type
-      Body: typeof sBody.type
+      Querystring: typeof sQuerystring.type;
+      Body: typeof sBody.type;
     }>(
       '/',
       {
@@ -367,7 +370,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.delete<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {

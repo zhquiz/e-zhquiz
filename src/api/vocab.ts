@@ -22,7 +22,7 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {
@@ -37,10 +37,10 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const { entry } = req.query
 
         const result = await g.server.zh.all<{
-          simplified: string
-          traditional: string | null
-          pinyin: string
-          english: string
+          simplified: string;
+          traditional: string | null;
+          pinyin: string;
+          english: string;
         }>(
           sql`
         SELECT simplified, traditional, pinyin, english
@@ -73,7 +73,7 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/q',
       {
@@ -88,10 +88,10 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const { q } = req.query
 
         const result = await g.server.zh.all<{
-          simplified: string
-          traditional: string | null
-          pinyin: string
-          english: string
+          simplified: string;
+          traditional: string | null;
+          pinyin: string;
+          english: string;
         }>(
           sql`
           SELECT simplified, traditional, pinyin, english
@@ -187,8 +187,8 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         async (): Promise<typeof sResponse.type> => {
           const { level, levelMin } =
             (await g.server.db.get<{
-              level: number | null
-              levelMin: number | null
+              level: number | null;
+              levelMin: number | null;
             }>(
               sql`
             SELECT

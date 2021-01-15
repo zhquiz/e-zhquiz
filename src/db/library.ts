@@ -5,17 +5,17 @@ import { g } from '../shared'
 import { sql, sqlJoin } from './util'
 
 export interface IDbLibrary {
-  title: string
-  entries: string[]
-  description?: string
-  tag?: string
-  source?: string
+  title: string;
+  entries: string[];
+  description?: string;
+  tag?: string;
+  source?: string;
 }
 
 export class DbLibrary {
   static tableName = 'library'
 
-  static async init() {
+  static async init () {
     await g.server.db.exec(sql`
       CREATE TABLE IF NOT EXISTS [library] (
         id          TEXT PRIMARY KEY,
@@ -76,7 +76,7 @@ export class DbLibrary {
     }
   }
 
-  static async create(items: IDbLibrary[]) {
+  static async create (items: IDbLibrary[]) {
     const out: DbLibrary[] = []
 
     for (const it of items) {
@@ -111,7 +111,7 @@ export class DbLibrary {
     return out
   }
 
-  static async update(items: (Partial<IDbLibrary> & { id: string })[]) {
+  static async update (items: (Partial<IDbLibrary> & { id: string })[]) {
     for (const it of items) {
       const entries = it.entries || []
 
@@ -129,6 +129,7 @@ export class DbLibrary {
                 : undefined
             ]
               .filter((s) => s)
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
               .map((s) => s!),
             ','
           )}
@@ -148,6 +149,7 @@ export class DbLibrary {
               it.tag !== null ? sql`tag = ${it.tag || ''}` : undefined
             ]
               .filter((s) => s)
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
               .map((s) => s!),
             ','
           )}
@@ -156,7 +158,7 @@ export class DbLibrary {
     }
   }
 
-  static async delete(ids: string[]) {
+  static async delete (ids: string[]) {
     if (ids.length < 1) {
       throw new Error('nothing to delete')
     }
@@ -172,7 +174,7 @@ export class DbLibrary {
     `)
   }
 
-  private constructor(public entry: Partial<IDbLibrary> & { id: string }) {
+  private constructor (public entry: Partial<IDbLibrary> & { id: string }) {
     if (!entry.id) {
       throw new Error('no entry id')
     }

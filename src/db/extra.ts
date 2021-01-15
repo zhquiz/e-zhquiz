@@ -6,16 +6,16 @@ import { g } from '../shared'
 import { sql, sqlJoin } from './util'
 
 export interface IDbExtra {
-  chinese: string
-  pinyin?: string
-  english?: string
-  type?: string
-  description?: string
-  tag?: string
+  chinese: string;
+  pinyin?: string;
+  english?: string;
+  type?: string;
+  description?: string;
+  tag?: string;
 }
 
 export class DbExtra {
-  static async init() {
+  static async init () {
     await g.server.db.exec(sql`
       CREATE TABLE IF NOT EXISTS [extra] (
         id          TEXT PRIMARY KEY,
@@ -46,7 +46,7 @@ export class DbExtra {
     `)
   }
 
-  static async create(items: IDbExtra[]) {
+  static async create (items: IDbExtra[]) {
     const out: DbExtra[] = []
 
     for (const it of items) {
@@ -85,7 +85,7 @@ export class DbExtra {
     return out
   }
 
-  static async update(items: (Partial<IDbExtra> & { id: string })[]) {
+  static async update (items: (Partial<IDbExtra> & { id: string })[]) {
     for (const it of items) {
       if (it.chinese) {
         await g.server.db.run(sql`
@@ -114,13 +114,20 @@ export class DbExtra {
             it.english !== null
               ? sql`english = ${it.english || null}`
               : undefined,
-            it.type !== null ? sql`[type] = ${it.type ?? null}` : undefined,
-            it.description !== null
-              ? sql`[description] = ${it.description ?? null}`
+            it.type !== null
+              ? sql`[type] = ${typeof it.type !== 'undefined' ? it.type : null}`
               : undefined,
-            it.tag !== null ? sql`tag = ${it.tag ?? null}` : undefined
+            it.description !== null
+              ? sql`[description] = ${
+                  typeof it.description !== 'undefined' ? it.description : null
+                }`
+              : undefined,
+            it.tag !== null
+              ? sql`tag = ${typeof it.tag !== 'undefined' ? it.tag : null}`
+              : undefined
           ]
             .filter((s) => s)
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             .map((s) => s!),
           ','
         )}
@@ -129,7 +136,7 @@ export class DbExtra {
     }
   }
 
-  static async delete(ids: string[]) {
+  static async delete (ids: string[]) {
     if (ids.length < 1) {
       throw new Error('nothing to delete')
     }
@@ -144,7 +151,7 @@ export class DbExtra {
     `)
   }
 
-  private constructor(public entry: Partial<IDbExtra> & { id: string }) {
+  private constructor (public entry: Partial<IDbExtra> & { id: string }) {
     if (!entry.id) {
       throw new Error('No entry id')
     }

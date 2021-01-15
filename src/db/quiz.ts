@@ -18,28 +18,28 @@ export const srsMap: [number, DurationUnit][] = [
 ]
 
 export interface IDbQuiz {
-  entry: string
-  pinyin?: string
-  english?: string
-  type: string
-  direction: string
-  source?: string
-  description?: string
-  tag?: string
-  srsLevel?: number
-  nextReview?: Date
-  lastRight?: Date
-  lastWrong?: Date
-  rightStreak?: number
-  wrongStreak?: number
-  maxRight?: number
-  maxWrong?: number
+  entry: string;
+  pinyin?: string;
+  english?: string;
+  type: string;
+  direction: string;
+  source?: string;
+  description?: string;
+  tag?: string;
+  srsLevel?: number;
+  nextReview?: Date;
+  lastRight?: Date;
+  lastWrong?: Date;
+  rightStreak?: number;
+  wrongStreak?: number;
+  maxRight?: number;
+  maxWrong?: number;
 }
 
 export class DbQuiz {
   static tableName = 'quiz'
 
-  static async init() {
+  static async init () {
     await g.server.db.exec(sql`
       CREATE TABLE IF NOT EXISTS [quiz] (
         id          TEXT PRIMARY KEY,
@@ -91,7 +91,7 @@ export class DbQuiz {
     `)
   }
 
-  static async create(items: IDbQuiz[]) {
+  static async create (items: IDbQuiz[]) {
     const out: DbQuiz[] = []
 
     for (const it of items) {
@@ -156,7 +156,7 @@ export class DbQuiz {
     return out
   }
 
-  static async delete(ids: string[]) {
+  static async delete (ids: string[]) {
     if (ids.length < 1) {
       throw new Error('nothing to delete')
     }
@@ -176,7 +176,7 @@ export class DbQuiz {
     )
   }
 
-  constructor(public entry: Partial<IDbQuiz> & { id: string }) {
+  constructor (public entry: Partial<IDbQuiz> & { id: string }) {
     if (!entry.id) {
       throw new Error('no entry id')
     }
@@ -194,7 +194,7 @@ export class DbQuiz {
     }
   }
 
-  async updateSRSLevel(df: number) {
+  async updateSRSLevel (df: number) {
     if (
       [
         this.entry.srsLevel,

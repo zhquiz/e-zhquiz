@@ -4,7 +4,7 @@ import S from 'jsonschema-definer'
 
 import { DbExtra } from '../db/extra'
 import { DbQuiz } from '../db/quiz'
-import { SQLTemplateString, sql, sqlJoin } from '../db/util'
+import { SQLTemplateString, SQLiteType, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -30,7 +30,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/many',
       {
@@ -54,6 +54,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = _select
           .split(',')
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           .map((it) => selMap[it]!)
           .filter((it) => it)
 
@@ -85,7 +86,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           )
         }
 
-        const promises: Promise<Record<string, any>[]>[] = []
+        const promises: Promise<Record<string, SQLiteType>[]>[] = []
 
         const batchSize = 500
         if (ids.length) {
@@ -128,7 +129,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.post<{
-      Body: typeof sBody.type
+      Body: typeof sBody.type;
     }>(
       '/srsLevel',
       {
@@ -178,7 +179,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.patch<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/mark',
       {
@@ -232,7 +233,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/init',
       {
@@ -321,14 +322,14 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         )
 
         const now = +new Date()
-        let quiz: typeof sQuizEntry.type[] = []
-        let upcoming: typeof sQuizEntry.type[] = []
+        const quiz: typeof sQuizEntry.type[] = []
+        const upcoming: typeof sQuizEntry.type[] = []
 
         const allItems = await g.server.db.all<{
-          id: string
-          wrongStreak: number | null
-          nextReview: number | null
-          srsLevel: number | null
+          id: string;
+          wrongStreak: number | null;
+          nextReview: number | null;
+          srsLevel: number | null;
         }>(sql`
           SELECT
             quiz.id           id,
@@ -378,7 +379,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.put<{
-      Body: typeof sBody.type
+      Body: typeof sBody.type;
     }>(
       '/',
       {
@@ -393,9 +394,9 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const { entries, type, source } = req.body
 
         const existing = await g.server.db.all<{
-          id: string
-          entry: string
-          direction: string
+          id: string;
+          entry: string;
+          direction: string;
         }>(
           sql`
           SELECT id, [entry], direction
@@ -405,20 +406,20 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         )
 
         const result: {
-          ids: string[]
-          entry: string
-          type: string
-          source?: 'extra'
+          ids: string[];
+          entry: string;
+          type: string;
+          source?: 'extra';
         }[] = []
 
         await g.server.db.transaction(async () => {
           for (const entry of entries) {
             const dirs = ['se', 'ec']
             const subresult: {
-              ids: string[]
-              entry: string
-              type: string
-              source?: 'extra'
+              ids: string[];
+              entry: string;
+              type: string;
+              source?: 'extra';
             } = {
               ids: [],
               entry,
@@ -431,7 +432,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
               switch (type) {
                 case 'vocab':
                   const rs = await g.server.zh.all<{
-                    traditional: string | null
+                    traditional: string | null;
                   }>(sql`
                     SELECT DISTINCT traditional
                     FROM vocab
@@ -501,6 +502,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
                   }
                 ])
 
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 subresult.ids.push(r!.entry.id)
               }
             }
@@ -521,7 +523,7 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.delete<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {

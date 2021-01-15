@@ -5,7 +5,6 @@ import stream from 'stream'
 
 import ON_DEATH from 'death'
 import fastify, { FastifyInstance } from 'fastify'
-import fastifyStatic from 'fastify-static'
 import jieba from 'nodejieba'
 import pino from 'pino'
 import sqlite3 from 'sqlite3'
@@ -17,41 +16,43 @@ import { Driver } from './db/util'
 import { g } from './shared'
 
 interface IServerOptions {
-  port: number
-  userDataDir: string
-  assetsDir: string
+  port: number;
+  userDataDir: string;
+  asarUnpack?: string;
 }
 
 interface IServerAssets {
-  logger: pino.Logger
-  zh: Driver
-  db: Driver
+  logger: pino.Logger;
+  zh: Driver;
+  db: Driver;
 }
 
 export class Server implements IServerOptions, IServerAssets {
-  static async init(opts: IServerOptions) {
-    jieba.load({
-      dict: path.join(
-        opts.assetsDir,
-        '../node_modules/nodejieba/dict/jieba.dict.utf8'
-      ),
-      userDict: path.join(
-        opts.assetsDir,
-        '../node_modules/nodejieba/dict/user.dict.utf8'
-      ),
-      hmmDict: path.join(
-        opts.assetsDir,
-        '../node_modules/nodejieba/dict/hmm_model.utf8'
-      ),
-      idfDict: path.join(
-        opts.assetsDir,
-        '../node_modules/nodejieba/dict/idf.utf8'
-      ),
-      stopWordDict: path.join(
-        opts.assetsDir,
-        '../node_modules/nodejieba/dict/stop_words.utf8'
-      )
-    })
+  static async init (opts: IServerOptions) {
+    if (opts.asarUnpack) {
+      jieba.load({
+        dict: path.join(
+          opts.asarUnpack,
+          'node_modules/nodejieba/dict/jieba.dict.utf8'
+        ),
+        userDict: path.join(
+          opts.asarUnpack,
+          'node_modules/nodejieba/dict/user.dict.utf8'
+        ),
+        hmmDict: path.join(
+          opts.asarUnpack,
+          'node_modules/nodejieba/dict/hmm_model.utf8'
+        ),
+        idfDict: path.join(
+          opts.asarUnpack,
+          'node_modules/nodejieba/dict/idf.utf8'
+        ),
+        stopWordDict: path.join(
+          opts.asarUnpack,
+          'node_modules/nodejieba/dict/stop_words.utf8'
+        )
+      })
+    }
 
     const logThrough = new stream.PassThrough()
 
@@ -59,7 +60,7 @@ export class Server implements IServerOptions, IServerAssets {
       {
         prettyPrint: true,
         serializers: {
-          req(req) {
+          req (req) {
             const [url, q] = req.url.split(/\?(.+)$/)
             const query = q ? qs.parse(q) : undefined
 
@@ -76,7 +77,7 @@ export class Server implements IServerOptions, IServerAssets {
     logThrough.pipe(process.stdout)
 
     const zh = await Driver.open(
-      path.join(opts.assetsDir, 'zh.db'),
+      path.join(opts.asarUnpack || 'public', 'assets', 'zh.db'),
       sqlite3.OPEN_READONLY
     )
     const db = await Driver.open(path.join(opts.userDataDir, 'data.db'))
@@ -92,23 +93,8 @@ export class Server implements IServerOptions, IServerAssets {
       done()
     })
 
-    app.register(fastifyStatic, {
-      root: g.getPath('public'),
-      redirect: true
-    })
-
     app.register(apiRouter, {
       prefix: '/api'
-    })
-
-    app.get('/server/settings', async () => {
-      return {}
-    })
-
-    app.setNotFoundHandler((req, reply) => {
-      if (!req.url.startsWith('/api/')) {
-        reply.status(200).sendFile(g.getPath('public', 'index.html'))
-      }
     })
 
     await new Promise<void>((resolve, reject) => {
@@ -130,7 +116,7 @@ export class Server implements IServerOptions, IServerAssets {
 
   port: number
   userDataDir: string
-  assetsDir: string
+  asarUnpack?: string
 
   logger: pino.Logger
   zh: Driver
@@ -138,14 +124,14 @@ export class Server implements IServerOptions, IServerAssets {
 
   private isCleanedUp = false
 
-  private constructor(
+  private constructor (
     private app: FastifyInstance,
     opts: IServerOptions,
     assets: IServerAssets
   ) {
     this.port = opts.port
     this.userDataDir = opts.userDataDir
-    this.assetsDir = opts.assetsDir
+    this.asarUnpack = opts.asarUnpack
 
     this.logger = assets.logger
     this.zh = assets.zh
@@ -156,7 +142,7 @@ export class Server implements IServerOptions, IServerAssets {
     })
   }
 
-  async cleanup() {
+  async cleanup () {
     if (this.isCleanedUp) {
       return
     }
@@ -167,12 +153,4 @@ export class Server implements IServerOptions, IServerAssets {
     this.db.close()
     this.zh.close()
   }
-}
-
-if (require.main === module) {
-  Server.init({
-    port: 5000,
-    userDataDir: '.',
-    assetsDir: 'assets'
-  })
 }

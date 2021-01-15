@@ -1,20 +1,84 @@
 import sqlite3 from 'sqlite3'
 
-export function mapAsync<T, R>(
+export function mapAsync<T, R> (
   arr: T[],
   cb: (a: T, i: number) => R | Promise<R>
 ): Promise<R[]> {
   return Promise.all(arr.map(cb))
 }
 
+export class Statement {
+  params: Record<string, SQLiteType>
+
+  constructor (
+    public stmt: sqlite3.Statement,
+    templateString: SQLTemplateString
+  ) {
+    this.params = {}
+    for (const [k, v] of templateString.map) {
+      this.params[`?${k}`] = v
+    }
+  }
+
+  async run () {
+    return new Promise<{ meta: sqlite3.RunResult }>((resolve, reject) => {
+      this.stmt.run(this.params, function (e) {
+        e ? reject(e) : resolve({ meta: this })
+      })
+    })
+  }
+
+  async get<R extends Record<string, SQLiteType>> () {
+    return new Promise<{ data: R | undefined; meta: sqlite3.RunResult }>(
+      (resolve, reject) => {
+        this.stmt.get(this.params, function (e, r) {
+          e
+            ? reject(e)
+            : resolve({
+              data: r,
+              meta: this
+            })
+        })
+      }
+    )
+  }
+
+  async all<R extends Record<string, SQLiteType>> () {
+    return new Promise<{ data: R[]; meta: sqlite3.RunResult }>(
+      (resolve, reject) => {
+        this.stmt.all(this.params, function (e, rs) {
+          e
+            ? reject(e)
+            : resolve({
+              data: rs,
+              meta: this
+            })
+        })
+      }
+    )
+  }
+
+  async finalize () {
+    return new Promise<void>((resolve, reject) => {
+      this.stmt.finalize((e) => {
+        e ? reject(e) : resolve()
+      })
+    })
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SQLTemplateStringArg = SQLiteType | any[] | SQLTemplateString | undefined
+
 export const sql = (
   s: TemplateStringsArray,
-  ...args: (SQLiteType | any[] | SQLTemplateString | undefined)[]
+  ...args: SQLTemplateStringArg[]
 ) => {
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
   return new SQLTemplateString(s, ...args)
 }
 
-export function sqlJoin(sqls: SQLTemplateString[], sep: string) {
+export function sqlJoin (sqls: SQLTemplateString[], sep: string) {
   const [f1, ...fs] = sqls
   if (!f1) {
     return undefined
@@ -34,17 +98,14 @@ export class SQLTemplateString {
   sql = ''
   map = new Map<number, SQLiteType>()
 
-  constructor(
-    s: TemplateStringsArray,
-    ...args: (SQLiteType | any[] | SQLTemplateString | undefined)[]
-  ) {
+  constructor (s: TemplateStringsArray, ...args: SQLTemplateStringArg[]) {
     s.map((ss, i) => {
       this.sql += ss
       this.append(args[i])
     })
   }
 
-  append(a: SQLiteType | any[] | SQLTemplateString | undefined) {
+  append (a: SQLTemplateStringArg) {
     if (typeof a === 'undefined') {
       return
     }
@@ -60,6 +121,7 @@ export class SQLTemplateString {
       this.sql += ')'
     } else if (a instanceof SQLTemplateString) {
       this.sql += a.sql.replace(/\?(\d+)/g, (_, p1) => {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const v = a.map.get(parseInt(p1))!
         return this.setValue(v)
       })
@@ -68,7 +130,7 @@ export class SQLTemplateString {
     }
   }
 
-  setValue(v: SQLiteType) {
+  setValue (v: SQLiteType) {
     const i = this.map.size + 1
     this.map.set(i, v)
     return `?${i}`
@@ -76,7 +138,7 @@ export class SQLTemplateString {
 }
 
 export class Driver {
-  static async open(
+  static async open (
     filename: string,
     mode = sqlite3.OPEN_CREATE | sqlite3.OPEN_READWRITE
   ) {
@@ -87,12 +149,12 @@ export class Driver {
     })
   }
 
-  private constructor(
+  private constructor (
     public driver: sqlite3.Database,
     public filename: string
   ) {}
 
-  async get<R extends Record<string, SQLiteType>>(sql: SQLTemplateString) {
+  async get<R extends Record<string, SQLiteType>> (sql: SQLTemplateString) {
     const stmt = await this.prepare(sql)
     const { data } = await stmt.get<R>()
     await stmt.finalize()
@@ -100,7 +162,7 @@ export class Driver {
     return data
   }
 
-  async all<R extends Record<string, SQLiteType>>(sql: SQLTemplateString) {
+  async all<R extends Record<string, SQLiteType>> (sql: SQLTemplateString) {
     const stmt = await this.prepare(sql)
     const { data } = await stmt.all<R>()
     await stmt.finalize()
@@ -108,13 +170,13 @@ export class Driver {
     return data
   }
 
-  async run(sql: SQLTemplateString) {
+  async run (sql: SQLTemplateString) {
     const stmt = await this.prepare(sql)
     await stmt.run()
     await stmt.finalize()
   }
 
-  async prepare(sql: SQLTemplateString) {
+  async prepare (sql: SQLTemplateString) {
     return new Promise<Statement>((resolve, reject) => {
       this.driver.prepare(sql.sql, function (e) {
         e ? reject(e) : resolve(new Statement(this, sql))
@@ -122,7 +184,7 @@ export class Driver {
     })
   }
 
-  async exec(sql: SQLTemplateString) {
+  async exec (sql: SQLTemplateString) {
     return new Promise<Statement>((resolve, reject) => {
       this.driver.exec(sql.sql, function (e) {
         e ? reject(e) : resolve(new Statement(this, sql))
@@ -130,7 +192,7 @@ export class Driver {
     })
   }
 
-  async transaction<R>(tx: () => Promise<R>) {
+  async transaction<R> (tx: () => Promise<R>) {
     await this.exec(sql`BEGIN TRANSACTION`)
 
     let data: R | null = null
@@ -146,69 +208,9 @@ export class Driver {
     return data
   }
 
-  async close() {
+  async close () {
     return new Promise<void>((resolve, reject) => {
       this.driver.close((e) => (e ? reject(e) : resolve()))
-    })
-  }
-}
-
-export class Statement {
-  params: Record<string, SQLiteType>
-
-  constructor(
-    public stmt: sqlite3.Statement,
-    templateString: SQLTemplateString
-  ) {
-    this.params = {}
-    for (const [k, v] of templateString.map) {
-      this.params[`?${k}`] = v
-    }
-  }
-
-  async run() {
-    return new Promise<{ meta: sqlite3.RunResult }>((resolve, reject) => {
-      this.stmt.run(this.params, function (e) {
-        e ? reject(e) : resolve({ meta: this })
-      })
-    })
-  }
-
-  async get<R extends Record<string, SQLiteType>>() {
-    return new Promise<{ data: R | undefined; meta: sqlite3.RunResult }>(
-      (resolve, reject) => {
-        this.stmt.get(this.params, function (e, r) {
-          e
-            ? reject(e)
-            : resolve({
-                data: r,
-                meta: this
-              })
-        })
-      }
-    )
-  }
-
-  async all<R extends Record<string, SQLiteType>>() {
-    return new Promise<{ data: R[]; meta: sqlite3.RunResult }>(
-      (resolve, reject) => {
-        this.stmt.all(this.params, function (e, rs) {
-          e
-            ? reject(e)
-            : resolve({
-                data: rs,
-                meta: this
-              })
-        })
-      }
-    )
-  }
-
-  async finalize() {
-    return new Promise<void>((resolve, reject) => {
-      this.stmt.finalize((e) => {
-        e ? reject(e) : resolve()
-      })
     })
   }
 }
