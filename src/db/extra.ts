@@ -3,6 +3,7 @@ import { Ulid } from 'id128'
 import jieba from 'nodejieba'
 
 import { g } from '../shared'
+import { sql, sqlJoin } from './util'
 
 export interface IDbExtra {
   chinese: string
@@ -14,28 +15,26 @@ export interface IDbExtra {
 }
 
 export class DbExtra {
-  static tableName = 'extra'
-
   static async init() {
-    await g.server.db.exec(/* sql */ `
-      CREATE TABLE IF NOT EXISTS [${this.tableName}] (
+    await g.server.db.exec(sql`
+      CREATE TABLE IF NOT EXISTS [extra] (
         id          TEXT PRIMARY KEY,
         createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         chinese     TEXT NOT NULL UNIQUE
       );
 
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_updatedAt ON [${this.tableName}](updatedAt);
+      CREATE INDEX IF NOT EXISTS idx_extra_updatedAt ON [extra](updatedAt);
 
-      CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
-        AFTER UPDATE ON [${this.tableName}]
+      CREATE TRIGGER IF NOT EXISTS t_extra_updatedAt
+        AFTER UPDATE ON [extra]
         FOR EACH ROW
         WHEN NEW.updatedAt = OLD.updatedAt
         BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
+          UPDATE [extra] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
 
-      CREATE VIRTUAL TABLE IF NOT EXISTS ${this.tableName}_q USING fts5(
+      CREATE VIRTUAL TABLE IF NOT EXISTS extra_q USING fts5(
         id,
         chinese,
         pinyin,
@@ -50,55 +49,29 @@ export class DbExtra {
   static async create(items: IDbExtra[]) {
     const out: DbExtra[] = []
 
-    const stmt = await g.server.db.prepare<{
-      $id: string
-      $chinese: string
-    }>(/* sql */ `
-      INSERT INTO [${this.tableName}] (id, chinese)
-      VALUES ($id, $chinese)
-    `)
-
-    const stmtQ = await g.server.db.prepare<{
-      $id: string
-      $jieba_chinese: string
-      $pinyin: string
-      $english: string
-      $type: string
-      $description: string
-      $tag: string
-    }>(/* sql */ `
-      INSERT INTO ${this.tableName}_q (id, chinese, pinyin, english, [type], [description], tag)
-      VALUES (
-        $id,
-        $jieba_chinese,
-        $pinyin,
-        $english,
-        $type,
-        $description,
-        $tag
-      )
-    `)
-
     for (const it of items) {
       const id = Ulid.generate().toCanonical()
       const pinyin =
         it.pinyin ||
         toPinyin(it.chinese, { toneToNumber: true, keepRest: true })
 
-      await stmt.run({
-        $id: id,
-        $chinese: it.chinese
-      })
+      await g.server.db.run(sql`
+        INSERT INTO [extra] (id, chinese)
+        VALUES (${id}, ${it.chinese})
+      `)
 
-      await stmtQ.run({
-        $id: id,
-        $jieba_chinese: jieba.cutForSearch(it.chinese).join(' '),
-        $pinyin: pinyin,
-        $english: it.english || '',
-        $type: it.type || 'vocab',
-        $description: it.description || '',
-        $tag: it.tag || ''
-      })
+      await g.server.db.run(sql`
+        INSERT INTO extra_q (id, chinese, pinyin, english, [type], [description], tag)
+        VALUES (
+          ${id},
+          ${jieba.cutForSearch(it.chinese).join(' ')},
+          ${pinyin},
+          ${it.english || ''},
+          ${it.type || 'vocab'},
+          ${it.description || ''},
+          ${it.tag || ''}
+        )
+      `)
 
       out.push(
         new DbExtra({
@@ -109,73 +82,51 @@ export class DbExtra {
       )
     }
 
-    await stmt.finalize()
-    await stmtQ.finalize()
-
     return out
   }
 
   static async update(items: (Partial<IDbExtra> & { id: string })[]) {
-    const stmt = await g.server.db.prepare<{
-      $id: string
-      $chinese: string
-    }>(/* sql */ `
-      UPDATE [${this.tableName}]
-      SET chinese = $chinese
-      WHERE id = $id
-    `)
-
     for (const it of items) {
-      const stmtQ = await g.server.db.prepare<{
-        $id: string
-        $jieba_chinese: string | null
-        $make_pinyin: string | null
-        $english: string | null
-        $type: string | null
-        $description: string | null
-        $tag: string | null
-      }>(/* sql */ `
-        UPDATE ${this.tableName}_q
-        SET ${[
-          it.chinese
-            ? /* sql */ `
-          chinese = $jieba_chinese,
-          pinyin = $make_pinyin
-          `
-            : '',
-          it.english !== null ? 'english = $english' : '',
-          it.type !== null ? '[type] = $type' : '',
-          it.description !== null ? '[description] = $description' : '',
-          it.tag !== null ? 'tag = $tag' : ''
-        ]
-          .filter((s) => s)
-          .join(',')}
-        WHERE id = $id
-      `)
-
       if (it.chinese) {
-        await stmt.run({
-          $id: it.id,
-          $chinese: it.chinese
-        })
+        await g.server.db.run(sql`
+          UPDATE [extra]
+          SET chinese = ${it.chinese}
+          WHERE id = ${it.id}
+        `)
       }
 
-      await stmtQ.run({
-        $id: it.id,
-        $jieba_chinese: jieba.cutForSearch(it.chinese || '').join(' '),
-        $make_pinyin:
-          it.pinyin ||
-          toPinyin(it.chinese || '', { keepRest: true, toneToNumber: true }),
-        $english: it.english || null,
-        $type: it.type ?? null,
-        $description: it.description ?? null,
-        $tag: it.tag ?? null
-      })
-
-      await stmtQ.finalize()
+      await g.server.db.run(sql`
+        UPDATE extra_q
+        SET ${sqlJoin(
+          [
+            it.chinese
+              ? sql`
+                chinese = ${jieba.cutForSearch(it.chinese || '').join(' ')},
+                pinyin = ${
+                  it.pinyin ||
+                  toPinyin(it.chinese || '', {
+                    keepRest: true,
+                    toneToNumber: true
+                  })
+                }
+              `
+              : undefined,
+            it.english !== null
+              ? sql`english = ${it.english || null}`
+              : undefined,
+            it.type !== null ? sql`[type] = ${it.type ?? null}` : undefined,
+            it.description !== null
+              ? sql`[description] = ${it.description ?? null}`
+              : undefined,
+            it.tag !== null ? sql`tag = ${it.tag ?? null}` : undefined
+          ]
+            .filter((s) => s)
+            .map((s) => s!),
+          ','
+        )}
+        WHERE id = ${it.id}
+      `)
     }
-
-    await stmt.finalize()
   }
 
   static async delete(ids: string[]) {
@@ -183,20 +134,14 @@ export class DbExtra {
       throw new Error('nothing to delete')
     }
 
-    const stmt = await g.server.db.prepare(/* sql */ `
-      DELETE FROM ${this.tableName}_q
-      WHERE id IN (${Array(ids.length).fill('?')})
+    await g.server.db.run(sql`
+      DELETE FROM extra_q
+      WHERE id IN ${ids}
     `)
-    const stmtQ = await g.server.db.prepare(/* sql */ `
-      DELETE FROM [${this.tableName}]
-      WHERE id IN (${Array(ids.length).fill('?')})
+    await g.server.db.run(sql`
+      DELETE FROM [extra]
+      WHERE id IN ${ids}
     `)
-
-    await stmt.run(ids)
-    await stmtQ.run(ids)
-
-    await stmt.finalize()
-    await stmtQ.finalize()
   }
 
   private constructor(public entry: Partial<IDbExtra> & { id: string }) {

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
 import { DbLibrary } from '../db/library'
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -38,40 +39,40 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { q, page, perPage } = req.query
 
-        const where: string[] = []
+        const where: SQLTemplateString[] = []
         if (q) {
-          where.push(/* sql */ `
+          where.push(sql`
           library.id IN (
-            SELECT id FROM library_q WHERE library_q MATCH $q
+            SELECT id FROM library_q WHERE library_q MATCH ${q}
           )
           `)
         }
 
         const { count = 0 } =
-          (await g.server.db.get<{ $q: string }, { count: number }>(
-            /* sql */ `
-          SELECT COUNT(*) [count]
-          FROM library
-          WHERE ${where.join(' AND ') || 'TRUE'}
-        `,
-            { $q: q || '' }
+          (await g.server.db.get<{ count: number }>(
+            sql`
+              SELECT COUNT(*) [count]
+              FROM library
+              WHERE ${sqlJoin(where, ' AND ') || sql`TRUE`}
+            `
           )) || {}
 
         const result = await g.server.db
-          .all<{ $q: string }, { id: string; title: string; entries: string }>(
-            /* sql */ `
+          .all<{ id: string; title: string; entries: string }>(
+            sql`
             SELECT id, title, entries
             FROM library
             ${
               q
                 ? /* sql */ `LEFT JOIN library_q ON library_q.id = library.id`
-                : ''
+                : undefined
             }
-            WHERE ${where.join(' AND ') || 'TRUE'}
-            ORDER BY ${q ? 'rank GROUP BY library.id' : 'library.updatedAt'}
+            WHERE ${sqlJoin(where, ' AND ') || sql`TRUE`}
+            ORDER BY ${
+              q ? sql`rank GROUP BY library.id` : sql`library.updatedAt`
+            }
             LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-          `,
-            { $q: q || '' }
+          `
           )
           .then((rs) =>
             rs.map((r) => ({

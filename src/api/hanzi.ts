@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -32,17 +33,14 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { entry } = req.query
 
-        const r = await g.server.zh.get<
-          { $entry: string },
-          {
-            sub: string | null
-            sup: string | null
-            variants: string | null
-            pinyin: string | null
-            english: string | null
-          }
-        >(
-          /* sql */ `
+        const r = await g.server.zh.get<{
+          sub: string | null
+          sup: string | null
+          variants: string | null
+          pinyin: string | null
+          english: string | null
+        }>(
+          sql`
           SELECT
             (
               SELECT GROUP_CONCAT(child, '') FROM token_sub WHERE parent = [entry] GROUP BY parent
@@ -56,9 +54,8 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             pinyin,
             english
           FROM token
-          WHERE [entry] = $entry
-          `,
-          { $entry: entry }
+          WHERE [entry] = ${entry}
+          `
         )
 
         if (!r) {
@@ -94,47 +91,43 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       },
       async (): Promise<typeof sResponse.type> => {
         const entries: string[] = await g.server.db
-          .all<[], { entry: string }>(
-            /* sql */ `
+          .all<{ entry: string }>(
+            sql`
             SELECT [entry]
             FROM quiz
             WHERE [type] = 'hanzi' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL
-            `,
-            []
+            `
           )
           .then((rs) => rs.map(({ entry }) => entry))
 
         const { level, levelMin } =
-          (await g.server.db.get<
-            [],
-            { level: number | null; levelMin: number | null }
-          >(
-            /* sql */ `
+          (await g.server.db.get<{
+            level: number | null
+            levelMin: number | null
+          }>(
+            sql`
             SELECT
               json_extract(meta, '$.level') [level],
               json_extract(meta, '$.levelMin') levelMin
             FROM user
-            `,
-            []
+            `
           )) || {}
 
-        const where: string[] = []
-        where.push(`hanzi_level >= $levelMin AND hanzi_level <= $level`)
-        where.push('english IS NOT NULL')
+        const where: SQLTemplateString[] = []
+        where.push(
+          sql`hanzi_level >= ${levelMin || 1} AND hanzi_level <= ${level || 60}`
+        )
+        where.push(sql`english IS NOT NULL`)
 
         const entriesSet = new Set(entries)
 
         let rs = await g.server.zh
-          .all<
-            { $levelMin: number; $level: number },
-            { result: string; english: string; level: number }
-          >(
-            /* sql */ `
+          .all<{ result: string; english: string; level: number }>(
+            sql`
             SELECT [entry] result, english, hanzi_level [level]
             FROM token
-            WHERE ${where.join(' AND ')}
-            `,
-            { $level: level || 60, $levelMin: levelMin || 1 }
+            WHERE ${sqlJoin(where, ' AND ')}
+            `
           )
           .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
 
@@ -142,16 +135,12 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           where.shift()
 
           rs = await g.server.zh
-            .all<
-              { $levelMin: number; $level: number },
-              { result: string; english: string; level: number }
-            >(
-              /* sql */ `
+            .all<{ result: string; english: string; level: number }>(
+              sql`
               SELECT [entry] result, english, hanzi_level [level]
               FROM token
-              WHERE ${where.join(' AND ')}
-              `,
-              { $level: level || 60, $levelMin: levelMin || 1 }
+              WHERE ${sqlJoin(where, ' AND ')}
+              `
             )
             .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
         }

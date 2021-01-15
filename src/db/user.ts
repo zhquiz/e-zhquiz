@@ -1,6 +1,7 @@
 import S from 'jsonschema-definer'
 
 import { g } from '../shared'
+import { sql } from './util'
 
 export const sDbUserMeta = S.shape({
   forvo: S.string(),
@@ -26,23 +27,21 @@ export const sDbUserMeta = S.shape({
 export type IDbUserMeta = typeof sDbUserMeta.type
 
 export class DbUser {
-  static tableName = 'user'
-
   static async init() {
-    await g.server.db.exec(/* sql */ `
-      CREATE TABLE IF NOT EXISTS [${this.tableName}] (
+    await g.server.db.exec(sql`
+      CREATE TABLE IF NOT EXISTS [user] (
         id          INT PRIMARY KEY DEFAULT 1,
         createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         meta        JSON DEFAULT '{}'
       );
 
-      CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
-        AFTER UPDATE ON [${this.tableName}]
+      CREATE TRIGGER IF NOT EXISTS t_user_updatedAt
+        AFTER UPDATE ON [user]
         FOR EACH ROW
         WHEN NEW.updatedAt = OLD.updatedAt
         BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
+          UPDATE [user] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
       
       INSERT OR IGNORE INTO user (id) VALUES (1);

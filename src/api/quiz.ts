@@ -4,7 +4,7 @@ import S from 'jsonschema-definer'
 
 import { DbExtra } from '../db/extra'
 import { DbQuiz } from '../db/quiz'
-import { Params } from '../db/util'
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -60,34 +60,31 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           throw { statusCode: 400, message: 'not enough select' }
         }
 
-        const params = new Params()
-
-        const getResult = async (initialWhere: string) => {
+        const getResult = async (initialWhere: SQLTemplateString) => {
           const where = [initialWhere]
 
           if (type) {
-            where.push(/* sql */ `
-            quiz.type = ${params.set(type)}
+            where.push(sql`
+            quiz.type = ${type}
             `)
           }
 
           if (source) {
-            where.push(/* sql */ `
-            quiz.source = ${params.set(source)}
+            where.push(sql`
+            quiz.source = ${source}
             `)
           } else {
-            where.push(/* sql */ `
+            where.push(sql`
             quiz.source IS NULL
             `)
           }
 
           return g.server.db.all(
-            /* sql */ `
+            sql`
             SELECT ${select}
             FROM quiz
-            WHERE ${where.join(' AND ')}
-            `,
-            params.get()
+            WHERE ${sqlJoin(where, ' AND ')}
+            `
           )
         }
 
@@ -96,23 +93,11 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const batchSize = 500
         if (ids.length) {
           for (let i = 0; i < ids.length; i += batchSize) {
-            promises.push(
-              getResult(
-                /* sql */ `quiz.id IN (${ids.map((it) => params.set(it))})`
-              )
-            )
-            params.map = new Map()
+            promises.push(getResult(sql`quiz.id IN ${ids}`))
           }
         } else if (entries.length) {
           for (let i = 0; i < entries.length; i += batchSize) {
-            promises.push(
-              getResult(
-                /* sql */ `quiz.entry IN (${entries.map((it) =>
-                  params.set(it)
-                )})`
-              )
-            )
-            params.map = new Map()
+            promises.push(getResult(sql`quiz.entry IN ${entries}`))
           }
         } else {
           throw {
@@ -166,13 +151,12 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         for (let i = 0; i < entries.length; i += chunkSize) {
           const chunk = entries.slice(i, i + chunkSize)
           promises.push(
-            g.server.db.all<any[], { entry: string; srsLevel: number | null }>(
-              /* sql */ `
+            g.server.db.all<{ entry: string; srsLevel: number | null }>(
+              sql`
               SELECT [entry], srsLevel
               FROM quiz
-              WHERE [type] = ? AND [entry] IN (${Array(chunk.length).fill('?')})
-              `,
-              [type, ...chunk]
+              WHERE [type] = ${type} AND [entry] IN ${chunk}
+              `
             )
           )
         }
@@ -284,93 +268,77 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         /**
          * No need to await
          */
-        g.server.db
-          .prepare<[string]>(
-            /* sql */ `
+        g.server.db.run(
+          sql`
             UPDATE user
-            SET meta = json_set(meta, '$.settings.quiz', json(?))
+            SET meta = json_set(meta, '$.settings.quiz', json(${JSON.stringify({
+              type,
+              stage,
+              direction,
+              includeUndue,
+              includeExtra
+            })}))
             `
-          )
-          .then((s) =>
-            s.run([
-              JSON.stringify({
-                type,
-                stage,
-                direction,
-                includeUndue,
-                includeExtra
-              })
-            ])
-          )
+        )
 
-        const params = new Params()
-
-        const where: string[] = []
+        const where: SQLTemplateString[] = []
         if (q) {
-          where.push(/* sql */ `
-              quiz.id IN (
-                SELECT id FROM quiz_q WHERE quiz_q MATCH ${params.set(q)}
-              )
-            `)
+          where.push(sql`
+            quiz.id IN (
+              SELECT id FROM quiz_q WHERE quiz_q MATCH ${q}
+            )
+          `)
         }
 
         if (stage.length) {
-          const orCond: string[] = []
+          const orCond: SQLTemplateString[] = []
 
           if (stage.includes('new')) {
-            orCond.push(/* sql */ `quiz.srsLevel IS NULL`)
+            orCond.push(sql`quiz.srsLevel IS NULL`)
           }
 
           if (stage.includes('learning')) {
-            orCond.push(/* sql */ `quiz.srsLevel < 3`)
+            orCond.push(sql`quiz.srsLevel < 3`)
           }
 
           if (stage.includes('graduated')) {
-            orCond.push(/* sql */ `quiz.graduated >= 3`)
+            orCond.push(sql`quiz.graduated >= 3`)
           }
 
-          where.push(`(${orCond.join(' OR ')})`)
+          where.push(sql`(${sqlJoin(orCond, ' OR ')})`)
         }
 
         if (!stage.includes('leech')) {
-          where.push(/* sql */ `NOT (quiz.wrongStreak > 2)`)
+          where.push(sql`NOT (quiz.wrongStreak > 2)`)
         }
 
         if (!includeExtra) {
-          where.push(/* sql */ `quiz.source IS NULL`)
+          where.push(sql`quiz.source IS NULL`)
         }
 
         where.push(
-          /* sql */ `quiz.direction IN (${direction.map((d) =>
-            params.set(d)
-          )})`,
-          /* sql */ `quiz.type IN (${type.map((d) => params.set(d))})`
+          sql`quiz.direction IN ${direction}`,
+          sql`quiz.type IN ${type}`
         )
 
         const now = +new Date()
         let quiz: typeof sQuizEntry.type[] = []
         let upcoming: typeof sQuizEntry.type[] = []
 
-        const allItems = await g.server.db.all<
-          any,
-          {
-            id: string
-            wrongStreak: number | null
-            nextReview: number | null
-            srsLevel: number | null
-          }
-        >(
-          /* sql */ `
+        const allItems = await g.server.db.all<{
+          id: string
+          wrongStreak: number | null
+          nextReview: number | null
+          srsLevel: number | null
+        }>(sql`
           SELECT
             quiz.id           id,
             quiz.wrongStreak  wrongStreak,
             quiz.nextReview   nextReview,
             quiz.srsLevel     srsLevel
           FROM quiz
-          WHERE ${where.join(' AND ') || 'FALSE'}
-          `,
-          params.get()
-        )
+          WHERE ${sqlJoin(where, ' AND ') || sql`FALSE`}
+          `)
 
         allItems.map(({ id, wrongStreak, nextReview, srsLevel }) => {
           if (!includeUndue) {
@@ -425,20 +393,16 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req, reply): Promise<typeof sResponse.type> => {
         const { entries, type, source } = req.body
 
-        const existing = await g.server.db.all<
-          any[],
-          {
-            id: string
-            entry: string
-            direction: string
-          }
-        >(
-          /* sql */ `
+        const existing = await g.server.db.all<{
+          id: string
+          entry: string
+          direction: string
+        }>(
+          sql`
           SELECT id, [entry], direction
           FROM quiz
-          WHERE [entry] IN (${Array(entries.length).fill('?')}) AND [type] = ?
-          `,
-          [...entries, type]
+          WHERE [entry] IN ${entries} AND [type] = ${type}
+          `
         )
 
         const result: {
@@ -467,17 +431,13 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             if (!source) {
               switch (type) {
                 case 'vocab':
-                  const rs = await g.server.zh.all<
-                    { $entry: string },
-                    { traditional: string | null }
-                  >(
-                    /* sql */ `
+                  const rs = await g.server.zh.all<{
+                    traditional: string | null
+                  }>(sql`
                     SELECT DISTINCT traditional
                     FROM vocab
-                    WHERE simplified = $entry OR traditional = $entry
-                    `,
-                    { $entry: entry }
-                  )
+                    WHERE simplified = ${entry} OR traditional = ${entry}
+                    `)
 
                   if (!rs.length) {
                     subresult.source = 'extra'
@@ -486,16 +446,12 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
                   }
                   break
                 case 'hanzi':
-                  const rHanzi = await g.server.zh.get<
-                    { $entry: string },
-                    { entry: string }
-                  >(
-                    /* sql */ `
+                  const rHanzi = await g.server.zh.get<{ entry: string }>(
+                    sql`
                     SELECT [entry]
                     FROM token
-                    WHERE [entry] = $entry AND english IS NOT NULL
-                    `,
-                    { $entry: entry }
+                    WHERE [entry] = ${entry} AND english IS NOT NULL
+                    `
                   )
 
                   if (!rHanzi) {
@@ -503,16 +459,12 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
                   }
                   break
                 case 'sentence':
-                  const rSentence = await g.server.zh.get<
-                    { $entry: string },
-                    { chinese: string }
-                  >(
-                    /* sql */ `
+                  const rSentence = await g.server.zh.get<{ chinese: string }>(
+                    sql`
                     SELECT chinese
                     FROM sentence
-                    WHERE chinese = $entry
-                    `,
-                    { $entry: entry }
+                    WHERE chinese = ${entry}
+                    `
                   )
 
                   if (!rSentence) {
@@ -541,12 +493,14 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
               if (ext) {
                 subresult.ids.push(ext.id)
               } else {
-                const [r] = await DbQuiz.create({
-                  entry,
-                  type,
-                  direction,
-                  source: subresult.source
-                })
+                const [r] = await DbQuiz.create([
+                  {
+                    entry,
+                    type,
+                    direction,
+                    source: subresult.source
+                  }
+                ])
 
                 subresult.ids.push(r!.entry.id)
               }

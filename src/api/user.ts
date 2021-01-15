@@ -1,20 +1,18 @@
 import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
-  const selMap: Record<string, string> = {
-    level: "json_extract(meta, '$.level') level",
-    levelMin: "json_extract(meta, '$.levelMin') levelMin",
-    forvo: "json_extract(meta, '$.forvo') forvo",
-    'settings.quiz': "json_extract(meta, '$.settings.quiz') [settings.quiz]",
-    'settings.level.whatToShow':
-      "json_extract(meta, '$.settings.level.whatToShow') [settings.level.whatToShow]",
-    'settings.sentence.min':
-      "json_extract(meta, '$.settings.sentence.min') [settings.sentence.min]",
-    'settings.sentence.max':
-      "json_extract(meta, '$.settings.sentence.max') [settings.sentence.max]"
+  const selMap: Record<string, SQLTemplateString> = {
+    level: sql`json_extract(meta, '$.level') [level]`,
+    levelMin: sql`json_extract(meta, '$.levelMin') levelMin`,
+    forvo: sql`json_extract(meta, '$.forvo') forvo`,
+    'settings.quiz': sql`json_extract(meta, '$.settings.quiz') [settings.quiz]`,
+    'settings.level.whatToShow': sql`json_extract(meta, '$.settings.level.whatToShow') [settings.level.whatToShow]`,
+    'settings.sentence.min': sql`json_extract(meta, '$.settings.sentence.min') [settings.sentence.min]`,
+    'settings.sentence.max': sql`json_extract(meta, '$.settings.sentence.max') [settings.sentence.max]`
   }
 
   {
@@ -41,7 +39,7 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
-          .map((s) => selMap[s.trim()])
+          .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
         if (!sel.length) {
@@ -49,10 +47,9 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
 
         const result = await g.server.db.get(
-          /* sql */ `
-          SELECT ${sel} FROM user
-          `,
-          []
+          sql`
+          SELECT ${sqlJoin(sel, ',')} FROM user
+          `
         )
 
         if (!result) {
@@ -94,41 +91,37 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         await g.server.db.transaction(async () => {
           if (level) {
             await g.server.db.run(
-              /* sql */ `
+              sql`
               UPDATE user
-              SET meta = json_set(meta, '$.level', ?)
-              `,
-              [level]
+              SET meta = json_set(meta, '$.level', ${level})
+              `
             )
           }
 
           if (levelMin) {
             await g.server.db.run(
-              /* sql */ `
+              sql`
               UPDATE user
-              SET meta = json_set(meta, '$.levelMin', ?)
-              `,
-              [levelMin]
+              SET meta = json_set(meta, '$.levelMin', ${levelMin})
+              `
             )
           }
 
           if (sentenceMax) {
             await g.server.db.run(
-              /* sql */ `
+              sql`
               UPDATE user
-              SET meta = json_set(meta, '$.settings.sentence.max', ?)
-              `,
-              [sentenceMax]
+              SET meta = json_set(meta, '$.settings.sentence.max', ${sentenceMax})
+              `
             )
           }
 
           if (sentenceMin) {
             await g.server.db.run(
-              /* sql */ `
+              sql`
               UPDATE user
-              SET meta = json_set(meta, '$.settings.sentence.min', ?)
-              `,
-              [sentenceMin]
+              SET meta = json_set(meta, '$.settings.sentence.min', ${sentenceMin})
+              `
             )
           }
         })

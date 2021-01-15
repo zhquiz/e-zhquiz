@@ -2,17 +2,18 @@ import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
 import { DbExtra } from '../db/extra'
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
-  const selMap: Record<string, string> = {
-    id: 'extra.id id',
-    chinese: 'extra.chinese chinese',
-    pinyin: 'extra_q.pinyin pinyin',
-    english: 'extra_q.english english',
-    type: 'extra_q.type [type]',
-    description: 'extra_q.description description',
-    tag: 'extra_q.tag tag'
+  const selMap: Record<string, SQLTemplateString> = {
+    id: sql`extra.id id`,
+    chinese: sql`extra.chinese chinese`,
+    pinyin: sql`extra_q.pinyin pinyin`,
+    english: sql`extra_q.english english`,
+    type: sql`extra_q.type [type]`,
+    description: sql`extra_q.description [description]`,
+    tag: sql`extra_q.tag tag`
   }
 
   {
@@ -60,45 +61,43 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
-          .map((s) => selMap[s.trim()])
+          .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
         if (!sel.length) {
           throw { statusCode: 400, message: 'not enough select' }
         }
 
-        const where: string[] = []
+        const where: SQLTemplateString[] = []
 
         if (q) {
-          where.push(/* sql */ `
+          where.push(sql`
           extra.id IN (
-            SELECT id FROM extra_q WHERE extra_q MATCH $q
+            SELECT id FROM extra_q WHERE extra_q MATCH ${q}
           )
           `)
         }
 
         try {
           const { count = 0 } =
-            (await g.server.db.get<{ $q: string }, { count: number }>(
-              /* sql */ `
+            (await g.server.db.get<{ count: number }>(
+              sql`
               SELECT COUNT(*) [count]
               FROM extra
-              WHERE ${where.join(' AND ') || 'TRUE'}
-              `,
-              { $q: q || '' }
+              WHERE ${sqlJoin(where, ' AND ') || sql`TRUE`}
+              `
             )) || {}
 
-          const result = await g.server.db.all<{ $q: string }>(
-            /* sql */ `
-              SELECT ${sel}
+          const result = await g.server.db.all(
+            sql`
+              SELECT ${sqlJoin(sel, ',')}
               FROM extra
               LEFT JOIN extra_q ON extra_q.id = extra.id
-              WHERE ${where.join(' AND ') || 'TRUE'}
+              WHERE ${sqlJoin(where, ' AND ') || sql`TRUE`}
               GROUP BY extra.id
               ORDER BY ${sorter}
               LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-              `,
-            { $q: q || '' }
+              `
           )
 
           return {
@@ -140,24 +139,21 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
-          .map((s) => selMap[s.trim()])
+          .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
         if (!sel.length) {
           throw { statusCode: 400, message: 'not enough select' }
         }
 
-        const result = await g.server.db.get<{ $entry: string }>(
-          /* sql */ `
-          SELECT ${sel}
+        const result = await g.server.db.get(sql`
+          SELECT ${sqlJoin(sel, ',')}
           FROM extra
           LEFT JOIN extra_q ON extra_q.id = extra.id
-          WHERE extra.chinese = $entry
+          WHERE extra.chinese = ${entry}
           LIMIT 1
           GROUP BY extra.id
-          `,
-          { $entry: entry }
-        )
+        `)
 
         if (!result) {
           reply.status(404)
@@ -214,17 +210,13 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const { chinese } = req.body
 
         const checkVocab = async () => {
-          const r = await g.server.zh.get<
-            { $chinese: string },
-            { simplified: string }
-          >(
-            /* sql */ `
+          const r = await g.server.zh.get<{ simplified: string }>(
+            sql`
             SELECT simplified
             FROM vocab
-            WHERE simplified = $chinese OR traditional = $chinese
+            WHERE simplified = ${chinese} OR traditional = ${chinese}
             LIMIT 1
-            `,
-            { $chinese: chinese }
+            `
           )
 
           if (r) {
@@ -244,17 +236,13 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             return null
           }
 
-          const r = await g.server.zh.get<
-            { $chinese: string },
-            { entry: string }
-          >(
-            /* sql */ `
+          const r = await g.server.zh.get<{ entry: string }>(
+            sql`
             SELECT [entry]
             FROM token
-            WHERE [entry] = $chinese AND english IS NOT NULL
+            WHERE [entry] = ${chinese} AND english IS NOT NULL
             LIMIT 1
-            `,
-            { $chinese: chinese }
+            `
           )
 
           if (r) {
@@ -274,17 +262,13 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             return null
           }
 
-          const r = await g.server.zh.get<
-            { $chinese: string },
-            { chinese: string }
-          >(
-            /* sql */ `
+          const r = await g.server.zh.get<{ chinese: string }>(
+            sql`
             SELECT chinese
             FROM sentence
-            WHERE chinese = ?
+            WHERE chinese = ${chinese}
             LIMIT 1
-            `,
-            { $chinese: chinese }
+            `
           )
 
           if (r) {

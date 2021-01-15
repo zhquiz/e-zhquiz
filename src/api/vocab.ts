@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -35,21 +36,17 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { entry } = req.query
 
-        const result = await g.server.zh.all<
-          { $entry: string },
-          {
-            simplified: string
-            traditional: string | null
-            pinyin: string
-            english: string
-          }
-        >(
-          /* sql */ `
+        const result = await g.server.zh.all<{
+          simplified: string
+          traditional: string | null
+          pinyin: string
+          english: string
+        }>(
+          sql`
         SELECT simplified, traditional, pinyin, english
         FROM vocab
-        WHERE simplified = $entry OR traditional = $entry
-        `,
-          { $entry: entry }
+        WHERE simplified = ${entry} OR traditional = ${entry}
+        `
         )
 
         return {
@@ -90,21 +87,17 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { q } = req.query
 
-        const result = await g.server.zh.all<
-          { $q: string },
-          {
-            simplified: string
-            traditional: string | null
-            pinyin: string
-            english: string
-          }
-        >(
-          /* sql */ `
+        const result = await g.server.zh.all<{
+          simplified: string
+          traditional: string | null
+          pinyin: string
+          english: string
+        }>(
+          sql`
           SELECT simplified, traditional, pinyin, english
           FROM vocab
-          WHERE simplified LIKE '%'||$q||'$' OR traditional LIKE '%'||$q||'%'
-          `,
-          { $q: q }
+          WHERE simplified LIKE '%'||${q}||'$' OR traditional LIKE '%'||${q}||'%'
+          `
         )
 
         return {
@@ -136,13 +129,12 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       },
       async (): Promise<typeof sResponse.type> => {
         const srsLevelMap = await g.server.db
-          .all<any[], { entry: string; srsLevel: number }>(
-            /* sql */ `
+          .all<{ entry: string; srsLevel: number }>(
+            sql`
             SELECT [entry], srsLevel
             FROM quiz
             WHERE [type] = 'vocab' AND source IS NULL AND srsLevel IS NOT NULL
-            `,
-            []
+            `
           )
           .then((rs) =>
             rs.reduce(
@@ -152,13 +144,12 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           )
 
         const result = await g.server.zh
-          .all<any[], { entry: string; level: number }>(
-            /* sql */ `
+          .all<{ entry: string; level: number }>(
+            sql`
             SELECT [entry], vocab_level [level]
             FROM token
             WHERE vocab_level IS NOT NULL
-            `,
-            []
+            `
           )
           .then((rs) =>
             rs.map((r) => {
@@ -195,47 +186,43 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         },
         async (): Promise<typeof sResponse.type> => {
           const { level, levelMin } =
-            (await g.server.db.get<
-              any[],
-              { level: number | null; levelMin: number | null }
-            >(
-              /* sql */ `
+            (await g.server.db.get<{
+              level: number | null
+              levelMin: number | null
+            }>(
+              sql`
             SELECT
               json_extract(meta, '$.level') [level],
               json_extract(meta, '$.levelMin') levelMin
             FROM user
-            `,
-              []
+            `
             )) || {}
 
           const entries: string[] = await g.server.db
-            .all<{ $level: number; $levelMin: number }, { entry: string }>(
-              /* sql */ `
+            .all<{ entry: string }>(
+              sql`
             SELECT [entry]
             FROM quiz
             WHERE [type] = 'vocab' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL AND source IS NULL
-            `,
-              { $level: level || 60, $levelMin: levelMin || 1 }
+            `
             )
             .then((rs) => rs.map(({ entry }) => entry))
 
-          const where: string[] = [
-            `vocab_level >= $levelMin AND vocab_level <= $level`
+          const where: SQLTemplateString[] = [
+            sql`vocab_level >= ${levelMin || 1} AND vocab_level <= ${
+              level || 60
+            }`
           ]
 
           const entriesSet = new Set(entries)
 
           let rs = await g.server.zh
-            .all<
-              { $level: number; $levelMin: number },
-              { result: string; english: string; level: number }
-            >(
-              /* sql */ `
+            .all<{ result: string; english: string; level: number }>(
+              sql`
               SELECT [entry] result, english, vocab_level [level]
               FROM token
-              WHERE ${where.join(' AND ')}
-              `,
-              { $level: level || 60, $levelMin: levelMin || 1 }
+              WHERE ${sqlJoin(where, ' AND ')}
+              `
             )
             .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
 
@@ -243,16 +230,12 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             where.shift()
 
             rs = await g.server.zh
-              .all<
-                { $level: number; $levelMin: number },
-                { result: string; english: string; level: number }
-              >(
-                /* sql */ `
+              .all<{ result: string; english: string; level: number }>(
+                sql`
               SELECT [entry] result, english, vocab_level [level]
               FROM token
-              WHERE ${where.join(' AND ')}
-              `,
-                { $level: level || 60, $levelMin: levelMin || 1 }
+              WHERE ${sqlJoin(where, ' AND ')}
+              `
               )
               .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
           }

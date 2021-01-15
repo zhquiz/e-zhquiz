@@ -2,6 +2,7 @@ import { Ulid } from 'id128'
 import jieba from 'nodejieba'
 
 import { g } from '../shared'
+import { sql, sqlJoin } from './util'
 
 export interface IDbLibrary {
   title: string
@@ -15,8 +16,8 @@ export class DbLibrary {
   static tableName = 'library'
 
   static async init() {
-    await g.server.db.exec(/* sql */ `
-      CREATE TABLE IF NOT EXISTS [${this.tableName}] (
+    await g.server.db.exec(sql`
+      CREATE TABLE IF NOT EXISTS [library] (
         id          TEXT PRIMARY KEY,
         createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
@@ -25,18 +26,18 @@ export class DbLibrary {
         source      TEXT
       );
 
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_updatedAt ON [${this.tableName}](updatedAt);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_source ON [${this.tableName}](source);
+      CREATE INDEX IF NOT EXISTS idx_library_updatedAt ON [library](updatedAt);
+      CREATE INDEX IF NOT EXISTS idx_library_source ON [library](source);
 
-      CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
-        AFTER UPDATE ON [${this.tableName}]
+      CREATE TRIGGER IF NOT EXISTS t_library_updatedAt
+        AFTER UPDATE ON [library]
         FOR EACH ROW
         WHEN NEW.updatedAt = OLD.updatedAt
         BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
+          UPDATE [library] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
 
-      CREATE VIRTUAL TABLE IF NOT EXISTS ${this.tableName}_q USING fts5(
+      CREATE VIRTUAL TABLE IF NOT EXISTS library_q USING fts5(
         id,
         title,
         [entry],
@@ -45,23 +46,20 @@ export class DbLibrary {
       );
     `)
 
-    const r = await g.server.db
-      .prepare(
-        /* sql */ `
-      SELECT * FROM [${this.tableName}] WHERE source = 'zh'
+    const r = await g.server.db.get(
+      sql`
+      SELECT * FROM [library] WHERE source = 'zh'
     `
-      )
-      .then((s) => s.get({}))
+    )
 
     if (!r) {
       await g.server.zh
-        .prepare(
-          /* sql */ `
+        .all(
+          sql`
           SELECT title, entries FROM library
           `
         )
-        .then((s) => s.all({}))
-        .then(({ data }) => {
+        .then((data) => {
           return g.server.db.transaction(async () => {
             await this.create(
               data.map((r) => ({
@@ -81,50 +79,26 @@ export class DbLibrary {
   static async create(items: IDbLibrary[]) {
     const out: DbLibrary[] = []
 
-    const stmt = await g.server.db.prepare<{
-      $id: string
-      $title: string
-      $entries: string
-      $source: string | null
-    }>(/* sql */ `
-      INSERT INTO [${this.tableName}] (id, title, entries, source)
-      VALUES ($id, $title, $entries, $source)
-    `)
-
-    const stmtQ = await g.server.db.prepare<{
-      $id: string
-      $jieba_title: string
-      $entry: string
-      $description: string
-      $tag: string
-    }>(/* sql */ `
-      INSERT INTO ${this.tableName}_q (id, title, [entry], [description], tag)
-      VALUES (
-        $id,
-        $jieba_title,
-        $entry,
-        $description,
-        $tag
-      )
-    `)
-
     for (const it of items) {
       const id = Ulid.generate().toCanonical()
 
-      await stmt.run({
-        $id: id,
-        $title: it.title,
-        $entries: JSON.stringify(it.entries),
-        $source: it.source || null
+      await g.server.db.run(sql`
+        INSERT INTO [library] (id, title, entries, source)
+        VALUES (${id}, ${it.title}, ${JSON.stringify(it.entries)}, ${
+        it.source || null
       })
+      `)
 
-      await stmtQ.run({
-        $id: id,
-        $jieba_title: jieba.cutForSearch(it.title).join(' '),
-        $entry: it.entries.join(' '),
-        $description: it.description || '',
-        $tag: it.tag || ''
-      })
+      await g.server.db.run(sql`
+        INSERT INTO library_q (id, title, [entry], [description], tag)
+        VALUES (
+          ${id},
+          ${jieba.cutForSearch(it.title).join(' ')},
+          ${it.entries.join(' ')},
+          ${it.description || ''},
+          ${it.tag || ''}
+        )
+      `)
 
       out.push(
         new DbLibrary({
@@ -134,9 +108,6 @@ export class DbLibrary {
       )
     }
 
-    await stmt.finalize()
-    await stmtQ.finalize()
-
     return out
   }
 
@@ -144,61 +115,44 @@ export class DbLibrary {
     for (const it of items) {
       const entries = it.entries || []
 
-      const stmt = await g.server.db.prepare<{
-        $id: string
-        $title: string
-        $entries: string
-        $source: string | null
-      }>(/* sql */ `
-        UPDATE [${this.tableName}]
-        SET ${[
-          it.title ? 'title = $title' : '',
-          entries.length ? 'entries = $entries' : '',
-          typeof it.source !== 'undefined' ? 'source = $source' : ''
-        ]
-          .filter((s) => s)
-          .join(',')}
-        WHERE id = $id
-      `)
-
-      const stmtQ = await g.server.db.prepare<{
-        $title: string
-        $entry: string
-        $description: string
-        $tag: string
-        $id: string
-      }>(/* sql */ `
-        UPDATE ${this.tableName}_q
-        SET ${[
-          it.title ? 'title = $title' : '',
-          entries.length ? '' : 'entry = $entry',
-          it.description !== null ? '[description] = $description' : '',
-          it.tag !== null ? 'tag = $tag' : ''
-        ]
-          .filter((s) => s)
-          .join(',')}
-        WHERE id = $id
-      `)
-
       if (it.title || entries.length || typeof it.source !== 'undefined') {
-        stmt.run({
-          $id: it.id,
-          $title: it.title || '',
-          $entries: JSON.stringify(entries),
-          $source: it.source || ''
-        })
+        await g.server.db.run(sql`
+          UPDATE [library]
+          SET ${sqlJoin(
+            [
+              it.title ? sql`title = ${it.title || ''}` : undefined,
+              entries.length
+                ? sql`entries = ${JSON.stringify(entries)}`
+                : undefined,
+              typeof it.source !== 'undefined'
+                ? sql`source = ${it.source || ''}`
+                : undefined
+            ]
+              .filter((s) => s)
+              .map((s) => s!),
+            ','
+          )}
+          WHERE id = ${it.id}
+        `)
       }
 
-      stmtQ.run({
-        $id: it.id,
-        $title: it.title || '',
-        $entry: entries.join(' '),
-        $description: it.description || '',
-        $tag: it.tag || ''
-      })
-
-      await stmt.finalize()
-      await stmtQ.finalize()
+      await g.server.db.run(sql`
+          UPDATE library_q
+          SET ${sqlJoin(
+            [
+              it.title ? sql`title = ${it.title || ''}` : undefined,
+              entries.length ? sql`entry = ${entries.join(' ')}` : undefined,
+              it.description !== null
+                ? sql`[description] = ${it.description || ''}`
+                : undefined,
+              it.tag !== null ? sql`tag = ${it.tag || ''}` : undefined
+            ]
+              .filter((s) => s)
+              .map((s) => s!),
+            ','
+          )}
+          WHERE id = $id
+        `)
     }
   }
 
@@ -207,22 +161,15 @@ export class DbLibrary {
       throw new Error('nothing to delete')
     }
 
-    const stmt = await g.server.db.prepare(/* sql */ `
-      DELETE FROM ${this.tableName}_q
-      WHERE id IN (${Array(ids.length).fill('?')})
+    await g.server.db.run(sql`
+      DELETE FROM library_q
+      WHERE id IN ${ids}
     `)
 
-    await stmt.run(ids)
-
-    const stmtQ = await g.server.db.prepare(/* sql */ `
-      DELETE FROM [${this.tableName}]
-      WHERE id IN (${Array(ids.length).fill('?')})
+    await g.server.db.run(sql`
+      DELETE FROM [library]
+      WHERE id IN ${ids}
     `)
-
-    await stmtQ.run(ids)
-
-    await stmt.finalize()
-    await stmtQ.finalize()
   }
 
   private constructor(public entry: Partial<IDbLibrary> & { id: string }) {
