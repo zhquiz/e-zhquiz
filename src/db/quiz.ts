@@ -122,7 +122,7 @@ export class DbQuiz {
             (
               await Promise.all(
                 jieba.cut(it.entry).map(async (s) => {
-                  return g.server.db
+                  return g.server.zh
                     .all(
                       sql`
                         SELECT english

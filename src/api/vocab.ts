@@ -219,7 +219,9 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           let rs = await g.server.zh
             .all<{ result: string; english: string; level: number }>(
               sql`
-              SELECT [entry] result, english, vocab_level [level]
+              SELECT [entry] result, (
+                SELECT english FROM vocab WHERE simplified = [entry] ORDER BY frequency DESC
+              ) english, vocab_level [level]
               FROM token
               WHERE ${sqlJoin(where, ' AND ')}
               `
@@ -232,7 +234,9 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             rs = await g.server.zh
               .all<{ result: string; english: string; level: number }>(
                 sql`
-              SELECT [entry] result, english, vocab_level [level]
+              SELECT [entry] result, (
+                SELECT english FROM vocab WHERE simplified = [entry] ORDER BY frequency DESC
+              ), english, vocab_level [level]
               FROM token
               WHERE ${sqlJoin(where, ' AND ')}
               `

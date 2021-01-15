@@ -147,7 +147,11 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           throw { statusCode: 404, message: 'no matching entries found' }
         }
 
-        return r
+        return {
+          result: r.result,
+          english: r.english,
+          level: r.level
+        }
       }
     )
   }

@@ -8,11 +8,12 @@ import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
-  const selMap: Record<string, string> = {
-    id: 'quiz.id id',
-    entry: 'quiz.entry entry',
-    type: 'quiz.type type',
-    direction: 'quiz.direction direction'
+  const selMap: Record<string, SQLTemplateString> = {
+    id: sql`quiz.id id`,
+    entry: sql`quiz.entry [entry]`,
+    type: sql`quiz.type [type]`,
+    direction: sql`quiz.direction direction`,
+    source: sql`quiz.source source`
   }
 
   {
@@ -51,12 +52,12 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const ids = _ids ? _ids.split(',') : []
         const entries = _entries ? _entries.split(',') : []
 
-        const select = _select
+        const sel = _select
           .split(',')
-          .map((it) => selMap[it])
+          .map((it) => selMap[it]!)
           .filter((it) => it)
 
-        if (!select.length) {
+        if (!sel.length) {
           throw { statusCode: 400, message: 'not enough select' }
         }
 
@@ -73,15 +74,11 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             where.push(sql`
             quiz.source = ${source}
             `)
-          } else {
-            where.push(sql`
-            quiz.source IS NULL
-            `)
           }
 
           return g.server.db.all(
             sql`
-            SELECT ${select}
+            SELECT ${sqlJoin(sel, ',')}
             FROM quiz
             WHERE ${sqlJoin(where, ' AND ')}
             `
@@ -106,8 +103,10 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         }
 
+        const result = (await Promise.all(promises)).flat()
+
         return {
-          result: (await Promise.all(promises)).flat()
+          result
         }
       }
     )
@@ -340,15 +339,15 @@ const quizRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           WHERE ${sqlJoin(where, ' AND ') || sql`FALSE`}
           `)
 
-        allItems.map(({ id, wrongStreak, nextReview, srsLevel }) => {
+        allItems.map((r) => {
           if (!includeUndue) {
-            if (!nextReview || nextReview < now) {
-              quiz.push({ id, wrongStreak, nextReview, srsLevel })
+            if (!r.nextReview || r.nextReview < now) {
+              quiz.push(r)
             } else {
-              upcoming.push({ id, wrongStreak, nextReview, srsLevel })
+              upcoming.push(r)
             }
           } else {
-            quiz.push({ id, wrongStreak, nextReview, srsLevel })
+            quiz.push(r)
           }
         })
 

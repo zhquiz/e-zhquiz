@@ -151,8 +151,8 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           FROM extra
           LEFT JOIN extra_q ON extra_q.id = extra.id
           WHERE extra.chinese = ${entry}
-          LIMIT 1
           GROUP BY extra.id
+          LIMIT 1
         `)
 
         if (!result) {

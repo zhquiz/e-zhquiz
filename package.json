@@ -29,6 +29,7 @@
     "build": "run-s 'build:*'",
     "build:e": "tsc -P src/tsconfig.json",
     "build:ui": "cd ../ui && IS_ELECTRON=1 yarn build",
+    "predist": "yarn build",
     "dist": "electron-builder -wml",
     "ts": "TS_NODE_COMPILER_OPTIONS='{\"noImplicitAny\":false}' electron -r ts-node/register"
   },
