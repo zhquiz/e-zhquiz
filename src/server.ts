@@ -3,16 +3,17 @@ import path from 'path'
 import qs from 'querystring'
 import stream from 'stream'
 
-import sqlite from 'better-sqlite3'
 import ON_DEATH from 'death'
 import fastify, { FastifyInstance } from 'fastify'
 import fastifyStatic from 'fastify-static'
 import jieba from 'nodejieba'
 import pino from 'pino'
+import sqlite3 from 'sqlite3'
 import stripANSIStream from 'strip-ansi-stream'
 
 import apiRouter from './api'
 import { Database } from './db'
+import { Driver } from './db/util'
 import { g } from './shared'
 
 interface IServerOptions {
@@ -23,8 +24,8 @@ interface IServerOptions {
 
 interface IServerAssets {
   logger: pino.Logger
-  zh: sqlite.Database
-  db: sqlite.Database
+  zh: Driver
+  db: Driver
 }
 
 export class Server implements IServerOptions, IServerAssets {
@@ -74,19 +75,14 @@ export class Server implements IServerOptions, IServerAssets {
       .pipe(fs.createWriteStream(path.join(opts.userDataDir, 'server.log')))
     logThrough.pipe(process.stdout)
 
-    const zh = sqlite(path.join(opts.assetsDir, 'zh.db'), { readonly: true })
-    const db = sqlite(path.join(opts.userDataDir, 'data.db'))
+    const zh = await Driver.open(
+      path.join(opts.assetsDir, 'zh.db'),
+      sqlite3.OPEN_READONLY
+    )
+    const db = await Driver.open(path.join(opts.userDataDir, 'data.db'))
 
     const app = fastify({
       logger
-      // querystringParser: (s) => {
-      //   const q = qs.parse(s)
-      //   if (typeof q._ === 'string') {
-      //     q._ = rison.decode(q._)
-      //   }
-
-      //   return q
-      // }
     })
 
     app.addHook('preHandler', (req, _, done) => {
@@ -137,8 +133,8 @@ export class Server implements IServerOptions, IServerAssets {
   assetsDir: string
 
   logger: pino.Logger
-  zh: sqlite.Database
-  db: sqlite.Database
+  zh: Driver
+  db: Driver
 
   private isCleanedUp = false
 
@@ -167,6 +163,7 @@ export class Server implements IServerOptions, IServerAssets {
     this.isCleanedUp = true
 
     await this.app.close()
+
     this.db.close()
     this.zh.close()
   }

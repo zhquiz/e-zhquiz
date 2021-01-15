@@ -1,8 +1,10 @@
+import toPinyin from 'chinese-to-pinyin'
 import { Ulid } from 'id128'
 import { DurationUnit, addDate } from 'native-duration'
 import jieba from 'nodejieba'
 
 import { g } from '../shared'
+import { sql } from './util'
 
 export const srsMap: [number, DurationUnit][] = [
   [4, 'h'],
@@ -37,9 +39,9 @@ export interface IDbQuiz {
 export class DbQuiz {
   static tableName = 'quiz'
 
-  static init() {
-    g.server.db.exec(/* sql */ `
-      CREATE TABLE IF NOT EXISTS [${this.tableName}] (
+  static async init() {
+    await g.server.db.exec(sql`
+      CREATE TABLE IF NOT EXISTS [quiz] (
         id          TEXT PRIMARY KEY,
         createdAt   TIMESTAMP DEFAULT (strftime('%s','now')),
         updatedAt   TIMESTAMP DEFAULT (strftime('%s','now')),
@@ -57,26 +59,26 @@ export class DbQuiz {
         maxWrong    INT
       );
 
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_entry_type_direction ON [${this.tableName}]([entry], [type], direction);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_source ON [${this.tableName}](source);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_srsLevel ON [${this.tableName}](srsLevel);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_nextReview ON [${this.tableName}](nextReview);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_lastRight ON [${this.tableName}](lastRight);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_lastWrong ON [${this.tableName}](lastWrong);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_rightStreak ON [${this.tableName}](rightStreak);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_wrongStreak ON [${this.tableName}](wrongStreak);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_maxRight ON [${this.tableName}](maxRight);
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_maxWrong ON [${this.tableName}](maxWrong);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_entry_type_direction ON [quiz]([entry], [type], direction);
+      CREATE INDEX IF NOT EXISTS idx_quiz_source ON [quiz](source);
+      CREATE INDEX IF NOT EXISTS idx_quiz_srsLevel ON [quiz](srsLevel);
+      CREATE INDEX IF NOT EXISTS idx_quiz_nextReview ON [quiz](nextReview);
+      CREATE INDEX IF NOT EXISTS idx_quiz_lastRight ON [quiz](lastRight);
+      CREATE INDEX IF NOT EXISTS idx_quiz_lastWrong ON [quiz](lastWrong);
+      CREATE INDEX IF NOT EXISTS idx_quiz_rightStreak ON [quiz](rightStreak);
+      CREATE INDEX IF NOT EXISTS idx_quiz_wrongStreak ON [quiz](wrongStreak);
+      CREATE INDEX IF NOT EXISTS idx_quiz_maxRight ON [quiz](maxRight);
+      CREATE INDEX IF NOT EXISTS idx_quiz_maxWrong ON [quiz](maxWrong);
 
-      CREATE TRIGGER IF NOT EXISTS t_${this.tableName}_updatedAt
-        AFTER UPDATE ON [${this.tableName}]
+      CREATE TRIGGER IF NOT EXISTS t_quiz_updatedAt
+        AFTER UPDATE ON [quiz]
         FOR EACH ROW
         WHEN NEW.updatedAt = OLD.updatedAt
         BEGIN
-          UPDATE [${this.tableName}] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
+          UPDATE [quiz] SET updatedAt = strftime('%s','now') WHERE id = NEW.id;
         END;
 
-      CREATE VIRTUAL TABLE IF NOT EXISTS ${this.tableName}_q USING fts5(
+      CREATE VIRTUAL TABLE IF NOT EXISTS quiz_q USING fts5(
         id,
         [entry],
         pinyin,
@@ -89,84 +91,59 @@ export class DbQuiz {
     `)
   }
 
-  static create(...items: IDbQuiz[]) {
+  static async create(items: IDbQuiz[]) {
     const out: DbQuiz[] = []
 
-    const stmt = g.server.db.prepare<{
-      id: string
-      entry: string
-      type: string
-      direction: string
-      source: string | null
-    }>(/* sql */ `
-      INSERT INTO [${this.tableName}] (id, [entry], [type], direction, source)
-      VALUES (@id, @entry, @type, @direction, @source)
-    `)
-
-    const stmtQ = g.server.db.prepare<{
-      id: string
-      entry: string
-      pinyin: string | null
-      english: string
-      type: string
-      direction: string
-      description: string
-      tag: string
-    }>(/* sql */ `
-      INSERT INTO ${this.tableName}_q (id, [entry], pinyin, english, [type], direction, [description], tag)
-      VALUES (
-        @id,
-        @entry,
-        COALESCE(@pinyin,  to_pinyin(@entry)),
-        @english,
-        @type,
-        @direction,
-        @description,
-        @tag
-      )
-    `)
-
-    const stmtEng = g.server.zh.prepare(/* sql */ `
-    SELECT english
-    FROM vocab
-    WHERE simplified = @entry OR traditional = @entry
-    `)
-
-    items.map((it) => {
+    for (const it of items) {
       const id = Ulid.generate().toCanonical()
 
-      stmt.run({
-        id,
-        entry: it.entry,
-        type: it.type,
-        direction: it.direction,
-        source: it.source || null
+      await g.server.db.run(sql`
+        INSERT INTO [quiz] (id, [entry], [type], direction, source)
+        VALUES (${id}, ${it.entry}, ${it.type}, ${it.direction}, ${
+        it.source || null
       })
+      `)
 
-      stmtQ.run({
-        id,
-        entry: it.entry,
-        pinyin: it.pinyin
-          ? it.pinyin
-              .split(' ')
-              .map((s) => s.replace(/\d$/, ''))
-              .join(' ')
-          : null,
-        english:
-          it.english ||
-          jieba
-            .cut(it.entry)
-            .flatMap((s) => {
-              return stmtEng.all({ entry: s })
-            })
-            .map(({ english }) => english)
-            .join('; ') ||
-          'unknown',
-        type: it.type,
-        direction: it.direction,
-        description: it.description || '',
-        tag: [it.tag || '', it.source || ''].filter((it) => it).join(' ')
-      })
+      await g.server.db.run(sql`
+        INSERT INTO quiz_q (id, [entry], pinyin, english, [type], direction, [description], tag)
+        VALUES (
+          ${id},
+          ${it.entry},
+          ${
+            it.pinyin
+              ? it.pinyin
+                  .split(' ')
+                  .map((s) => s.replace(/\d$/, ''))
+                  .join(' ')
+              : toPinyin(it.entry, { keepRest: true, toneToNumber: true })
+          },
+          ${
+            it.english ||
+            (
+              await Promise.all(
+                jieba.cut(it.entry).map(async (s) => {
+                  return g.server.zh
+                    .all(
+                      sql`
+                        SELECT english
+                        FROM vocab
+                        WHERE simplified = ${s} OR traditional = ${s}
+                      `
+                    )
+                    .then((data) => data.map(({ english }) => english))
+                })
+              )
+            )
+              .flat()
+              .join('; ') ||
+            'unknown'
+          },
+          ${it.type},
+          ${it.direction},
+          ${it.description || ''},
+          ${[it.tag || '', it.source || ''].filter((it) => it).join(' ')}
+        )
+      `)
 
       out.push(
         new DbQuiz({
@@ -174,33 +151,29 @@ export class DbQuiz {
           id
         })
       )
-    })
+    }
 
     return out
   }
 
-  static delete(...ids: string[]) {
+  static async delete(ids: string[]) {
     if (ids.length < 1) {
       throw new Error('nothing to delete')
     }
 
-    g.server.db
-      .prepare(
-        /* sql */ `
-    DELETE FROM ${this.tableName}_q
-    WHERE id IN (${Array(ids.length).fill('?')})
-    `
-      )
-      .run(...ids)
+    await g.server.db.run(
+      sql`
+      DELETE FROM quiz_q
+      WHERE id IN ${ids}
+      `
+    )
 
-    g.server.db
-      .prepare(
-        /* sql */ `
-    DELETE FROM [${this.tableName}]
-    WHERE id IN (${Array(ids.length).fill('?')})
-    `
-      )
-      .run(...ids)
+    await g.server.db.run(
+      sql`
+      DELETE FROM [quiz]
+      WHERE id IN ${ids}
+      `
+    )
   }
 
   constructor(public entry: Partial<IDbQuiz> & { id: string }) {
@@ -221,7 +194,7 @@ export class DbQuiz {
     }
   }
 
-  updateSRSLevel(df: number) {
+  async updateSRSLevel(df: number) {
     if (
       [
         this.entry.srsLevel,
@@ -231,15 +204,13 @@ export class DbQuiz {
         this.entry.maxWrong
       ].some((it) => typeof it === 'undefined')
     ) {
-      const r = g.server.db
-        .prepare(
-          /* sql */ `
-      SELECT srsLevel, rightStreak, wrongStreak, maxRight, maxWrong
-      FROM [${DbQuiz.tableName}]
-      WHERE id = @id
-    `
-        )
-        .get({ id: this.entry.id })
+      const r = g.server.db.get(
+        sql`
+          SELECT srsLevel, rightStreak, wrongStreak, maxRight, maxWrong
+          FROM [quiz]
+          WHERE id = ${this.entry.id}
+        `
+      )
 
       if (!r) {
         throw new Error('entry not found by id')
@@ -279,7 +250,8 @@ export class DbQuiz {
       }
     }
 
-    this.entry.srsLevel = (this.entry.srsLevel || 0) + df
+    this.entry.srsLevel = this.entry.srsLevel || 0
+    this.entry.srsLevel = this.entry.srsLevel + df
     if (this.entry.srsLevel < 0) {
       this.entry.srsLevel = 0
     }
@@ -293,49 +265,29 @@ export class DbQuiz {
       this.entry.nextReview = getNextReview(-1)
     }
 
-    g.server.db
-      .prepare<{
-        id: string
-        srsLevel: number
-        nextReview: number
-        lastRight: number | null
-        lastWrong: number | null
-        rightStreak: number
-        wrongStreak: number
-        maxRight: number
-        maxWrong: number
-      }>(
-        /* sql */ `
-      UPDATE [${DbQuiz.tableName}]
+    await g.server.db.run(
+      sql`
+      UPDATE [quiz]
       SET
-        srsLevel = @srsLevel,
-        nextReview = @nextReview,
-        lastRight = @lastRight,
-        lastWrong = @lastWrong,
-        rightStreak = @rightStreak,
-        wrongStreak = @wrongStreak,
-        maxRight = @maxRight,
-        maxWrong = @maxWrong
-      WHERE id = @id
-    `
-      )
-      .run({
-        id: this.entry.id,
-        srsLevel: this.entry.srsLevel,
-        nextReview: +this.entry.nextReview,
-        lastRight:
+        srsLevel = ${this.entry.srsLevel},
+        nextReview = ${+this.entry.nextReview},
+        lastRight = ${
           typeof this.entry.lastRight !== 'undefined'
             ? +this.entry.lastRight
-            : null,
-        lastWrong:
+            : null
+        },
+        lastWrong = ${
           typeof this.entry.lastWrong !== 'undefined'
             ? +this.entry.lastWrong
-            : null,
-        rightStreak: this.entry.rightStreak,
-        wrongStreak: this.entry.wrongStreak,
-        maxRight: this.entry.maxRight,
-        maxWrong: this.entry.maxWrong
-      })
+            : null
+        },
+        rightStreak = ${this.entry.rightStreak},
+        wrongStreak = ${this.entry.wrongStreak},
+        maxRight = ${this.entry.maxRight},
+        maxWrong = ${this.entry.maxWrong}
+      WHERE id = ${this.entry.id}
+    `
+    )
 
     return this.entry
   }

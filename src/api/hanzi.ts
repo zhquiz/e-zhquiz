@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -32,26 +33,30 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { entry } = req.query
 
-        const r = g.server.zh
-          .prepare(
-            /* sql */ `
-        SELECT
-          (
-            SELECT GROUP_CONCAT(child, '') FROM token_sub WHERE parent = [entry] GROUP BY parent
-          ) sub,
-          (
-            SELECT GROUP_CONCAT(child, '') FROM token_sup WHERE parent = [entry] GROUP BY parent
-          ) sup,
-          (
-            SELECT GROUP_CONCAT(child, '') FROM token_var WHERE parent = [entry] GROUP BY parent
-          ) variants,
-          pinyin,
-          english
-        FROM token
-        WHERE [entry] = @entry
-        `
-          )
-          .get({ entry })
+        const r = await g.server.zh.get<{
+          sub: string | null
+          sup: string | null
+          variants: string | null
+          pinyin: string | null
+          english: string | null
+        }>(
+          sql`
+          SELECT
+            (
+              SELECT GROUP_CONCAT(child, '') FROM token_sub WHERE parent = [entry] GROUP BY parent
+            ) sub,
+            (
+              SELECT GROUP_CONCAT(child, '') FROM token_sup WHERE parent = [entry] GROUP BY parent
+            ) sup,
+            (
+              SELECT GROUP_CONCAT(child, '') FROM token_var WHERE parent = [entry] GROUP BY parent
+            ) variants,
+            pinyin,
+            english
+          FROM token
+          WHERE [entry] = ${entry}
+          `
+        )
 
         if (!r) {
           throw { statusCode: 404, message: 'not found' }
@@ -61,7 +66,7 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           sub: r.sub || '',
           sup: r.sup || '',
           variants: r.variants || '',
-          pinyin: r.piyin || '',
+          pinyin: r.pinyin || '',
           english: r.english || ''
         }
       }
@@ -85,65 +90,68 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (): Promise<typeof sResponse.type> => {
-        const entries: string[] = g.server.db
-          .prepare(
-            /* sql */ `
-        SELECT [entry]
-        FROM quiz
-        WHERE [type] = 'hanzi' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL
-        `
+        const entries: string[] = await g.server.db
+          .all<{ entry: string }>(
+            sql`
+            SELECT [entry]
+            FROM quiz
+            WHERE [type] = 'hanzi' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL
+            `
           )
-          .all()
-          .map(({ entry }) => entry)
+          .then((rs) => rs.map(({ entry }) => entry))
 
-        const { level, levelMin } = g.server.db
-          .prepare(
-            /* sql */ `
-        SELECT
-          json_extract(meta, '$.level') [level],
-          json_extract(meta, '$.levelMin') levelMin
-        FROM user
-        `
-          )
-          .get()
+        const { level, levelMin } =
+          (await g.server.db.get<{
+            level: number | null
+            levelMin: number | null
+          }>(
+            sql`
+            SELECT
+              json_extract(meta, '$.level') [level],
+              json_extract(meta, '$.levelMin') levelMin
+            FROM user
+            `
+          )) || {}
 
-        const where: string[] = []
-        where.push(`hanzi_level >= @levelMin AND hanzi_level <= @level`)
-        where.push('english IS NOT NULL')
+        const where: SQLTemplateString[] = []
+        where.push(
+          sql`hanzi_level >= ${levelMin || 1} AND hanzi_level <= ${level || 60}`
+        )
+        where.push(sql`english IS NOT NULL`)
 
         const entriesSet = new Set(entries)
 
-        let r = g.server.zh
-          .prepare(
-            /* sql */ `
-        SELECT [entry] result, english, hanzi_level [level]
-        FROM token
-        WHERE ${where.join(' AND ')}
-        `
+        let rs = await g.server.zh
+          .all<{ result: string; english: string; level: number }>(
+            sql`
+            SELECT [entry] result, english, hanzi_level [level]
+            FROM token
+            WHERE ${sqlJoin(where, ' AND ')}
+            `
           )
-          .all({ levelMin, level })
-          .filter(({ result }) => !entriesSet.has(result))
+          .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
 
-        if (!r.length) {
+        if (!rs.length) {
           where.shift()
 
-          r = g.server.zh
-            .prepare(
-              /* sql */ `
-          SELECT [entry] result, english, hanzi_level [level]
-          FROM token
-          WHERE ${where.join(' AND ')}
-          `
+          rs = await g.server.zh
+            .all<{ result: string; english: string; level: number }>(
+              sql`
+              SELECT [entry] result, english, hanzi_level [level]
+              FROM token
+              WHERE ${sqlJoin(where, ' AND ')}
+              `
             )
-            .all({ levelMin, level })
-            .filter(({ result }) => !entriesSet.has(result))
+            .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
         }
 
-        if (!r.length) {
+        const r = rs[Math.floor(Math.random() * rs.length)]
+
+        if (!r) {
           throw { statusCode: 404, message: 'no mathcing entries found' }
         }
 
-        return r[Math.floor(Math.random() * r.length)]
+        return r
       }
     )
   }

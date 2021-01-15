@@ -2,17 +2,18 @@ import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
 import { DbExtra } from '../db/extra'
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
-  const selMap: Record<string, string> = {
-    id: 'extra.id id',
-    chinese: 'extra.chinese chinese',
-    pinyin: 'extra_q.pinyin pinyin',
-    english: 'extra_q.english english',
-    type: 'extra_q.type [type]',
-    description: 'extra_q.description description',
-    tag: 'extra_q.tag tag'
+  const selMap: Record<string, SQLTemplateString> = {
+    id: sql`extra.id id`,
+    chinese: sql`extra.chinese chinese`,
+    pinyin: sql`extra_q.pinyin pinyin`,
+    english: sql`extra_q.english english`,
+    type: sql`extra_q.type [type]`,
+    description: sql`extra_q.description [description]`,
+    tag: sql`extra_q.tag tag`
   }
 
   {
@@ -60,48 +61,44 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
-          .map((s) => selMap[s.trim()])
+          .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
         if (!sel.length) {
           throw { statusCode: 400, message: 'not enough select' }
         }
 
-        const where: string[] = []
+        const where: SQLTemplateString[] = []
 
         if (q) {
-          where.push(/* sql */ `
+          where.push(sql`
           extra.id IN (
-            SELECT id FROM extra_q WHERE extra_q MATCH @q
+            SELECT id FROM extra_q WHERE extra_q MATCH ${q}
           )
           `)
         }
 
         try {
           const { count = 0 } =
-            g.server.db
-              .prepare(
-                /* sql */ `
-        SELECT COUNT(*) [count]
-        FROM extra
-        WHERE ${where.join(' AND ') || 'TRUE'}
-        `
-              )
-              .get({ q }) || {}
+            (await g.server.db.get<{ count: number }>(
+              sql`
+              SELECT COUNT(*) [count]
+              FROM extra
+              WHERE ${sqlJoin(where, ' AND ') || sql`TRUE`}
+              `
+            )) || {}
 
-          const result = g.server.db
-            .prepare(
-              /* sql */ `
-        SELECT ${sel}
-        FROM extra
-        LEFT JOIN extra_q ON extra_q.id = extra.id
-        WHERE ${where.join(' AND ') || 'TRUE'}
-        GROUP BY extra.id
-        ORDER BY ${sorter}
-        LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
-        `
-            )
-            .all({ q })
+          const result = await g.server.db.all(
+            sql`
+              SELECT ${sqlJoin(sel, ',')}
+              FROM extra
+              LEFT JOIN extra_q ON extra_q.id = extra.id
+              WHERE ${sqlJoin(where, ' AND ') || sql`TRUE`}
+              GROUP BY extra.id
+              ORDER BY ${sorter}
+              LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
+              `
+          )
 
           return {
             result,
@@ -142,25 +139,21 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
-          .map((s) => selMap[s.trim()])
+          .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
         if (!sel.length) {
           throw { statusCode: 400, message: 'not enough select' }
         }
 
-        const result = g.server.db
-          .prepare(
-            /* sql */ `
-        SELECT ${sel}
-        FROM extra
-        LEFT JOIN extra_q ON extra_q.id = extra.id
-        WHERE extra.chinese = @entry
-        LIMIT 1
-        GROUP BY extra.id
-        `
-          )
-          .get({ entry })
+        const result = await g.server.db.get(sql`
+          SELECT ${sqlJoin(sel, ',')}
+          FROM extra
+          LEFT JOIN extra_q ON extra_q.id = extra.id
+          WHERE extra.chinese = ${entry}
+          GROUP BY extra.id
+          LIMIT 1
+        `)
 
         if (!result) {
           reply.status(404)
@@ -216,17 +209,15 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       ): Promise<typeof sResponseNew.type | typeof sResponseExisting.type> => {
         const { chinese } = req.body
 
-        const checkVocab = () => {
-          const r = g.server.zh
-            .prepare(
-              /* sql */ `
-          SELECT simplified
-          FROM vocab
-          WHERE simplified = @chinese OR traditional = @chinese
-          LIMIT 1
-          `
-            )
-            .get({ chinese })
+        const checkVocab = async () => {
+          const r = await g.server.zh.get<{ simplified: string }>(
+            sql`
+            SELECT simplified
+            FROM vocab
+            WHERE simplified = ${chinese} OR traditional = ${chinese}
+            LIMIT 1
+            `
+          )
 
           if (r) {
             return {
@@ -240,21 +231,19 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           return null
         }
 
-        const checkHanzi = () => {
+        const checkHanzi = async () => {
           if (chinese.length !== 1) {
             return null
           }
 
-          const r = g.server.zh
-            .prepare(
-              /* sql */ `
-          SELECT [entry]
-          FROM token
-          WHERE [entry] = @chinese AND english IS NOT NULL
-          LIMIT 1
-          `
-            )
-            .get({ chinese })
+          const r = await g.server.zh.get<{ entry: string }>(
+            sql`
+            SELECT [entry]
+            FROM token
+            WHERE [entry] = ${chinese} AND english IS NOT NULL
+            LIMIT 1
+            `
+          )
 
           if (r) {
             return {
@@ -268,21 +257,19 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           return null
         }
 
-        const checkSentence = () => {
+        const checkSentence = async () => {
           if (chinese.length < 3) {
             return null
           }
 
-          const r = g.server.zh
-            .prepare(
-              /* sql */ `
-          SELECT chinese
-          FROM sentence
-          WHERE chinese = ?
-          LIMIT 1
-          `
-            )
-            .get({ chinese })
+          const r = await g.server.zh.get<{ chinese: string }>(
+            sql`
+            SELECT chinese
+            FROM sentence
+            WHERE chinese = ${chinese}
+            LIMIT 1
+            `
+          )
 
           if (r) {
             return {
@@ -297,14 +284,19 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
 
         if (!req.query.forced) {
-          const r = checkVocab() || checkHanzi() || checkSentence()
+          const r =
+            (await checkVocab()) ||
+            (await checkHanzi()) ||
+            (await checkSentence())
 
           if (r) {
             return r
           }
         }
 
-        const [r] = DbExtra.create([req.body])
+        const [r] = await g.server.db.transaction(() =>
+          DbExtra.create([req.body])
+        )
 
         return {
           id: r!.entry.id
@@ -348,12 +340,14 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req, reply): Promise<typeof sResponse.type> => {
         const { id } = req.query
 
-        DbExtra.update([
-          {
-            ...req.body,
-            id
-          }
-        ])
+        await g.server.db.transaction(() =>
+          DbExtra.update([
+            {
+              ...req.body,
+              id
+            }
+          ])
+        )
 
         reply.status(201)
         return {
@@ -387,7 +381,7 @@ const extraRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req, reply): Promise<typeof sResponse.type> => {
         const { id } = req.query
 
-        DbExtra.delete([id])
+        await g.server.db.transaction(() => DbExtra.delete([id]))
 
         reply.status(201)
         return {

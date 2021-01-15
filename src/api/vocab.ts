@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import S from 'jsonschema-definer'
 
+import { SQLTemplateString, sql, sqlJoin } from '../db/util'
 import { g } from '../shared'
 
 const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
@@ -35,15 +36,18 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { entry } = req.query
 
-        const result = g.server.zh
-          .prepare(
-            /* sql */ `
+        const result = await g.server.zh.all<{
+          simplified: string
+          traditional: string | null
+          pinyin: string
+          english: string
+        }>(
+          sql`
         SELECT simplified, traditional, pinyin, english
         FROM vocab
-        WHERE simplified = @entry OR traditional = @entry
+        WHERE simplified = ${entry} OR traditional = ${entry}
         `
-          )
-          .all({ entry })
+        )
 
         return {
           result
@@ -83,15 +87,18 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (req): Promise<typeof sResponse.type> => {
         const { q } = req.query
 
-        const result = g.server.zh
-          .prepare(
-            /* sql */ `
-        SELECT simplified, traditional, pinyin, english
-        FROM vocab
-        WHERE simplified LIKE '%'||@q||'$' OR traditional LIKE '%'||@q||'%'
-        `
-          )
-          .all({ q })
+        const result = await g.server.zh.all<{
+          simplified: string
+          traditional: string | null
+          pinyin: string
+          english: string
+        }>(
+          sql`
+          SELECT simplified, traditional, pinyin, english
+          FROM vocab
+          WHERE simplified LIKE '%'||${q}||'$' OR traditional LIKE '%'||${q}||'%'
+          `
+        )
 
         return {
           result
@@ -121,35 +128,37 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         }
       },
       async (): Promise<typeof sResponse.type> => {
-        const srsLevelMap = g.server.db
-          .prepare(
-            /* sql */ `
-        SELECT [entry], srsLevel
-        FROM quiz
-        WHERE [type] = 'vocab' AND source IS NULL AND srsLevel IS NOT NULL
-        `
+        const srsLevelMap = await g.server.db
+          .all<{ entry: string; srsLevel: number }>(
+            sql`
+            SELECT [entry], srsLevel
+            FROM quiz
+            WHERE [type] = 'vocab' AND source IS NULL AND srsLevel IS NOT NULL
+            `
           )
-          .all()
-          .reduce(
-            (prev, { entry, srsLevel }) => ({ ...prev, [entry]: srsLevel }),
-            {} as Record<string, number>
+          .then((rs) =>
+            rs.reduce(
+              (prev, { entry, srsLevel }) => ({ ...prev, [entry]: srsLevel }),
+              {} as Record<string, number>
+            )
           )
 
-        const result = g.server.zh
-          .prepare(
-            /* sql */ `
-        SELECT [entry], vocab_level [level]
-        FROM token
-        WHERE vocab_level IS NOT NULL
-        `
+        const result = await g.server.zh
+          .all<{ entry: string; level: number }>(
+            sql`
+            SELECT [entry], vocab_level [level]
+            FROM token
+            WHERE vocab_level IS NOT NULL
+            `
           )
-          .all()
-          .map((r) => {
-            return {
-              ...r,
-              srsLevel: srsLevelMap[r.entry]
-            }
-          })
+          .then((rs) =>
+            rs.map((r) => {
+              return {
+                ...r,
+                srsLevel: srsLevelMap[r.entry]
+              }
+            })
+          )
 
         return {
           result
@@ -176,65 +185,72 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           }
         },
         async (): Promise<typeof sResponse.type> => {
-          const { level, levelMin } = g.server.db
-            .prepare(
-              /* sql */ `
-          SELECT
-            json_extract(meta, '$.level') [level],
-            json_extract(meta, '$.levelMin') levelMin
-          FROM user
-          `
-            )
-            .get()
+          const { level, levelMin } =
+            (await g.server.db.get<{
+              level: number | null
+              levelMin: number | null
+            }>(
+              sql`
+            SELECT
+              json_extract(meta, '$.level') [level],
+              json_extract(meta, '$.levelMin') levelMin
+            FROM user
+            `
+            )) || {}
 
-          const entries: string[] = g.server.db
-            .prepare(
-              /* sql */ `
-          SELECT [entry]
-          FROM quiz
-          WHERE [type] = 'vocab' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL AND source IS NULL
-          `
+          const entries: string[] = await g.server.db
+            .all<{ entry: string }>(
+              sql`
+            SELECT [entry]
+            FROM quiz
+            WHERE [type] = 'vocab' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL AND source IS NULL
+            `
             )
-            .all()
-            .map(({ entry }) => entry)
+            .then((rs) => rs.map(({ entry }) => entry))
 
-          const where: string[] = [
-            `vocab_level >= @levelMin AND vocab_level <= @level`
+          const where: SQLTemplateString[] = [
+            sql`vocab_level >= ${levelMin || 1} AND vocab_level <= ${
+              level || 60
+            }`
           ]
 
           const entriesSet = new Set(entries)
 
-          let r = g.server.zh
-            .prepare(
-              /* sql */ `
-          SELECT [entry] result, english, vocab_level [level]
-          FROM token
-          WHERE ${where.join(' AND ')}
-          `
+          let rs = await g.server.zh
+            .all<{ result: string; english: string; level: number }>(
+              sql`
+              SELECT [entry] result, (
+                SELECT english FROM vocab WHERE simplified = [entry] ORDER BY frequency DESC
+              ) english, vocab_level [level]
+              FROM token
+              WHERE ${sqlJoin(where, ' AND ')}
+              `
             )
-            .all({ level, levelMin })
-            .filter(({ result }) => !entriesSet.has(result))
+            .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
 
-          if (!r.length) {
+          if (!rs.length) {
             where.shift()
 
-            r = g.server.zh
-              .prepare(
-                /* sql */ `
-            SELECT [entry] result, english, vocab_level [level]
-            FROM token
-            WHERE ${where.join(' AND ')}
-            `
+            rs = await g.server.zh
+              .all<{ result: string; english: string; level: number }>(
+                sql`
+              SELECT [entry] result, (
+                SELECT english FROM vocab WHERE simplified = [entry] ORDER BY frequency DESC
+              ), english, vocab_level [level]
+              FROM token
+              WHERE ${sqlJoin(where, ' AND ')}
+              `
               )
-              .all({ level, levelMin })
-              .filter(({ result }) => !entriesSet.has(result))
+              .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
           }
 
-          if (!r.length) {
+          const r = rs[Math.floor(Math.random() * rs.length)]
+
+          if (!r) {
             throw { statusCode: 404, message: 'no matching entries found' }
           }
 
-          return r[Math.floor(Math.random() * r.length)]
+          return r
         }
       )
     }
