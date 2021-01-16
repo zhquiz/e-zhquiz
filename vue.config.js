@@ -8,6 +8,7 @@ module.exports = {
     electronBuilder: {
       externals: ['fastify'],
       nodeIntegration: true,
+      preload: 'src/preload.js',
       builderOptions: {
         appId: 'cc.zhquiz.zhquiz',
         asarUnpack: ['assets/', 'node_modules/nodejieba/dict/'],

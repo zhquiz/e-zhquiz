@@ -1,30 +1,52 @@
 import Vue from 'vue'
-import VueRouter, { RouteConfig } from 'vue-router'
-
-import Home from '../views/Home.vue'
+import VueRouter from 'vue-router'
 
 Vue.use(VueRouter)
 
-const routes: Array<RouteConfig> = [
-  {
-    path: '/',
-    name: 'Home',
-    component: Home
-  },
-  {
-    path: '/about',
-    name: 'About',
-    // route level code-splitting
-    // this generates a separate chunk (about.[hash].js) for this route
-    // which is lazy-loaded when the route is visited.
-    component: () =>
-      import(/* webpackChunkName: "about" */ '../views/About.vue')
-  }
-]
-
 const router = new VueRouter({
   mode: 'hash',
-  routes
+  routes: [
+    {
+      path: '/',
+      redirect: '/random'
+    },
+    {
+      path: '/extra',
+      component: () => import('@/views/Extra.vue')
+    },
+    {
+      path: '/hanzi',
+      component: () => import('@/views/Hanzi.vue')
+    },
+    {
+      path: '/level',
+      component: () => import('@/views/Level.vue')
+    },
+    {
+      path: '/library',
+      component: () => import('@/views/Library.vue')
+    },
+    {
+      path: '/quiz',
+      component: () => import('@/views/Quiz.vue')
+    },
+    {
+      path: '/random',
+      component: () => import('@/views/Random.vue')
+    },
+    {
+      path: '/sentence',
+      component: () => import('@/views/Sentence.vue')
+    },
+    {
+      path: '/settings',
+      component: () => import('@/views/Settings.vue')
+    },
+    {
+      path: '/vocab',
+      component: () => import('@/views/Vocab.vue')
+    }
+  ]
 })
 
 export default router

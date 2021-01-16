@@ -1,4 +1,7 @@
-import { BrowserWindow, app, protocol } from 'electron'
+import crypto from 'crypto'
+import path from 'path'
+
+import { BrowserWindow, app, ipcMain, protocol } from 'electron'
 import ContextMenu from 'electron-context-menu'
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 import getPort from 'get-port'
@@ -6,21 +9,13 @@ import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 
 import { Server } from './server'
 
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace NodeJS {
-    interface Global {
-      win: BrowserWindow | null;
-    }
-  }
-}
-
 ContextMenu()
 
 const isDevelopment = process.env.NODE_ENV !== 'production'
+const token = crypto.randomBytes(48).toString('hex')
 
 let server: Server | null = null
-global.win = null
+let win: BrowserWindow | null = null
 
 // Scheme must be registered before the app is ready
 protocol.registerSchemesAsPrivileged([
@@ -28,7 +23,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 async function createWindow () {
-  global.win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
@@ -36,15 +31,19 @@ async function createWindow () {
       // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
       nodeIntegration: (process.env
         .ELECTRON_NODE_INTEGRATION as unknown) as boolean,
-      webviewTag: true
+      contextIsolation: false,
+      webviewTag: true,
+      preload: path.join(__dirname, 'preload.js')
     }
   })
 
-  global.win.maximize()
+  win.maximize()
 
   if (process.env.WEBPACK_DEV_SERVER_URL) {
     // Load the url of the dev server if in development mode
-    await global.win.loadURL(`${process.env.WEBPACK_DEV_SERVER_URL}/etabs.html`)
+    await win.loadURL(
+      `${process.env.WEBPACK_DEV_SERVER_URL}/etabs.html?token=${token}`
+    )
   } else {
     createProtocol('app')
     protocol.interceptHttpProtocol('app', (req, cb) => {
@@ -64,8 +63,8 @@ async function createWindow () {
       }
     })
 
-    // Load the index.html when not in development
-    global.win.loadURL('app://./etabs.html')
+    // Load the etabs.html when not in development
+    win.loadURL(`app://./etabs.html?token=${token}`)
   }
 }
 
@@ -120,7 +119,8 @@ async function initServer () {
     userDataDir: app.getPath('userData'),
     asarUnpack: app.isPackaged
       ? __dirname.replace(/\.asar([\\/])/, '.asar.unpacked$1')
-      : undefined
+      : undefined,
+    token
   })
 
   app.once('before-quit', () => {
@@ -131,3 +131,9 @@ async function initServer () {
   })
 }
 initServer()
+
+ipcMain.on('open-url', (ev, msg) => {
+  if (win) {
+    win.webContents.send('open-url', msg)
+  }
+})

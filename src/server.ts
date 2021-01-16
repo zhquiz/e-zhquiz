@@ -5,6 +5,7 @@ import stream from 'stream'
 
 import ON_DEATH from 'death'
 import fastify, { FastifyInstance } from 'fastify'
+import cors from 'fastify-cors'
 import jieba from 'nodejieba'
 import pino from 'pino'
 import sqlite3 from 'sqlite3'
@@ -19,6 +20,7 @@ interface IServerOptions {
   port: number;
   userDataDir: string;
   asarUnpack?: string;
+  token: string;
 }
 
 interface IServerAssets {
@@ -86,11 +88,35 @@ export class Server implements IServerOptions, IServerAssets {
       logger
     })
 
-    app.addHook('preHandler', (req, _, done) => {
+    app.register(cors, {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      origin: [/^app:\/\/\./, process.env.WEBPACK_DEV_SERVER_URL!]
+    })
+
+    app.addHook<{
+      Headers: {
+        'csrf-token': string;
+      };
+      Querystring: {
+        token: string;
+      };
+    }>('preValidation', async (req) => {
+      if (
+        req.headers['csrf-token'] === opts.token ||
+        (req.query && req.query.token === opts.token)
+      ) {
+        return null
+      }
+
+      throw { statusCode: 401, message: 'not authorized' }
+    })
+
+    app.addHook('preHandler', async (req) => {
       if (req.body) {
         req.log.info({ body: req.body }, 'parsed body')
       }
-      done()
+
+      return null
     })
 
     app.register(apiRouter, {
@@ -117,6 +143,7 @@ export class Server implements IServerOptions, IServerAssets {
   port: number
   userDataDir: string
   asarUnpack?: string
+  token: string
 
   logger: pino.Logger
   zh: Driver
@@ -132,6 +159,7 @@ export class Server implements IServerOptions, IServerAssets {
     this.port = opts.port
     this.userDataDir = opts.userDataDir
     this.asarUnpack = opts.asarUnpack
+    this.token = opts.token
 
     this.logger = assets.logger
     this.zh = assets.zh

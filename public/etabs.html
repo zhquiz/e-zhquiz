@@ -170,37 +170,42 @@
     </div>
     <div class="etabs-views"></div>
 
-    <script>
+    <script type="module">
       ;(function () {
         const TabGroup = require('electron-tabs')
+        const { shell, ipcRenderer } = require('electron')
+
+        const token = new URL(location.href).searchParams.get('token') || ''
+
         const tabGroup = new TabGroup()
         tabGroup.addTab({
-          title: 'Random',
-          src: '/index.html#/random',
+          title: 'Home',
+          src: `/index.html?token=${token}#` + '/',
           active: true,
+          closable: false,
           webviewAttributes: {
-            nodeintegration: ''
+            preload: `file://${__dirname}/preload.js`,
+            nodeintegration: process.env.ELECTRON_NODE_INTEGRATION || '',
+            plugins: ''
           }
         })
 
-        window
-          .require('electron')
-          .ipcRenderer.on('open-url', (evt, { url, title }) => {
-            console.log(evt, { url, title })
-
-            if (url.startsWith('/')) {
-              tabGroup.addTab({
-                title,
-                src: '/index.html#' + url,
-                active: true,
-                webviewAttributes: {
-                  nodeintegration: ''
-                }
-              })
-            } else {
-              window.require('electron').shell.openExternal(url)
-            }
-          })
+        ipcRenderer.on('open-url', (evt, { url, title }) => {
+          if (url.startsWith('/')) {
+            tabGroup.addTab({
+              title,
+              src: `/index.html?token=${token}#` + url,
+              active: true,
+              webviewAttributes: {
+                preload: `file://${__dirname}/preload.js`,
+                nodeintegration: process.env.ELECTRON_NODE_INTEGRATION || '',
+                plugins: ''
+              }
+            })
+          } else {
+            shell.openExternal(url)
+          }
+        })
       })()
     </script>
   </body>
