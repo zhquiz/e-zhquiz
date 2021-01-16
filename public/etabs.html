@@ -175,7 +175,11 @@
         const TabGroup = require('electron-tabs')
         const { shell, ipcRenderer } = require('electron')
 
-        const token = new URL(location.href).searchParams.get('token') || ''
+        const { searchParams } = new URL(location.href)
+
+        const token = searchParams.get('token')
+        const preload = searchParams.get('preload')
+        const nodeintegration = searchParams.get('nodeIntegration') || 'false'
 
         const tabGroup = new TabGroup()
         tabGroup.addTab({
@@ -184,8 +188,8 @@
           active: true,
           closable: false,
           webviewAttributes: {
-            preload: `file://${__dirname}/preload.js`,
-            nodeintegration: process.env.ELECTRON_NODE_INTEGRATION || '',
+            preload,
+            nodeintegration,
             plugins: ''
           }
         })
@@ -197,8 +201,8 @@
               src: `/index.html?token=${token}#` + url,
               active: true,
               webviewAttributes: {
-                preload: `file://${__dirname}/preload.js`,
-                nodeintegration: process.env.ELECTRON_NODE_INTEGRATION || '',
+                preload,
+                nodeintegration,
                 plugins: ''
               }
             })

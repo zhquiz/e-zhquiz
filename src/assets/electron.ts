@@ -5,5 +5,5 @@ declare global {
 }
 
 export function openInNewTab (url: string, title?: string) {
-  window.require('electron').ipcRenderer.send('open-url', { url, title })
+  window.ipcRenderer.send('open-url', { url, title })
 }

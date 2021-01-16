@@ -1,5 +1,7 @@
 import crypto from 'crypto'
 import path from 'path'
+import qs from 'querystring'
+import { pathToFileURL } from 'url'
 
 import { BrowserWindow, app, ipcMain, protocol } from 'electron'
 import ContextMenu from 'electron-context-menu'
@@ -24,25 +26,34 @@ protocol.registerSchemesAsPrivileged([
 
 async function createWindow () {
   win = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1024,
+    height: 768,
     webPreferences: {
       // Use pluginOptions.nodeIntegration, leave this alone
       // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
       nodeIntegration: (process.env
         .ELECTRON_NODE_INTEGRATION as unknown) as boolean,
       contextIsolation: false,
-      webviewTag: true,
-      preload: path.join(__dirname, 'preload.js')
+      webviewTag: true
     }
   })
 
   win.maximize()
 
+  const urlPayload: Record<string, string> = JSON.parse(
+    JSON.stringify({
+      token,
+      preload: pathToFileURL(path.join(__dirname, 'preload.js')),
+      nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION
+    })
+  )
+
   if (process.env.WEBPACK_DEV_SERVER_URL) {
     // Load the url of the dev server if in development mode
     await win.loadURL(
-      `${process.env.WEBPACK_DEV_SERVER_URL}/etabs.html?token=${token}`
+      `${process.env.WEBPACK_DEV_SERVER_URL}/index.html?${qs.stringify(
+        urlPayload
+      )}`
     )
   } else {
     createProtocol('app')
@@ -64,7 +75,7 @@ async function createWindow () {
     })
 
     // Load the etabs.html when not in development
-    win.loadURL(`app://./etabs.html?token=${token}`)
+    win.loadURL(`app://./etabs.html?${qs.stringify(urlPayload)}`)
   }
 }
 
