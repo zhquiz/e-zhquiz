@@ -176,9 +176,13 @@ export class Server implements IServerOptions, IServerAssets {
     }
     this.isCleanedUp = true
 
+    console.log('Cleaning up')
+
     await this.app.close()
 
-    this.db.close()
-    this.zh.close()
+    await this.db.close()
+    await this.zh.close()
+
+    console.log('Clean up finished')
   }
 }

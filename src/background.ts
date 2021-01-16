@@ -4,16 +4,18 @@ import qs from 'querystring'
 import { pathToFileURL } from 'url'
 
 import { BrowserWindow, app, ipcMain, protocol } from 'electron'
-import ContextMenu from 'electron-context-menu'
-import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 import getPort from 'get-port'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 
 import { Server } from './server'
 
-ContextMenu()
-
 const isDevelopment = process.env.NODE_ENV !== 'production'
+
+if (isDevelopment) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require('electron-context-menu')()
+}
+
 const token = crypto.randomBytes(48).toString('hex')
 
 let server: Server | null = null
@@ -31,8 +33,9 @@ async function createWindow () {
     webPreferences: {
       // Use pluginOptions.nodeIntegration, leave this alone
       // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
-      nodeIntegration: (process.env
-        .ELECTRON_NODE_INTEGRATION as unknown) as boolean,
+      // nodeIntegration: (process.env
+      //   .ELECTRON_NODE_INTEGRATION as unknown) as boolean,
+      nodeIntegration: true,
       contextIsolation: false,
       webviewTag: true
     }
@@ -44,35 +47,21 @@ async function createWindow () {
     JSON.stringify({
       token,
       preload: pathToFileURL(path.join(__dirname, 'preload.js')),
-      nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION
+      nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION,
+      port: server ? server.port : undefined
     })
   )
 
   if (process.env.WEBPACK_DEV_SERVER_URL) {
     // Load the url of the dev server if in development mode
     await win.loadURL(
-      `${process.env.WEBPACK_DEV_SERVER_URL}/index.html?${qs.stringify(
+      `${process.env.WEBPACK_DEV_SERVER_URL}/etabs.html?${qs.stringify(
         urlPayload
       )}`
     )
   } else {
     createProtocol('app')
-    protocol.interceptHttpProtocol('app', (req, cb) => {
-      if (server) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { uploadData, ...res } = req
-        const url = req.url.replace(
-          /^app:\/\/[^/]+\/api\//,
-          `http://localhost:${server.port}/api/`
-        )
-        console.log(url)
-        // eslint-disable-next-line standard/no-callback-literal
-        cb({
-          ...res,
-          url
-        })
-      }
-    })
+    win.setMenu(null)
 
     // Load the etabs.html when not in development
     win.loadURL(`app://./etabs.html?${qs.stringify(urlPayload)}`)
@@ -98,9 +87,29 @@ app.on('activate', () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  if (isDevelopment && !process.env.IS_TEST) {
+  server = await Server.init({
+    port: parseInt(process.env.SERVER_PORT || '') || (await getPort()),
+    userDataDir: app.getPath('userData'),
+    asarUnpack: app.isPackaged
+      ? __dirname.replace(/\.asar([\\/]|$)/, '.asar.unpacked$1')
+      : undefined,
+    token
+  })
+
+  app.once('before-quit', () => {
+    if (server) {
+      server.cleanup()
+      server = null
+    }
+  })
+
+  if (isDevelopment) {
     // Install Vue Devtools
     try {
+      const { default: installExtension, VUEJS_DEVTOOLS } = await import(
+        'electron-devtools-installer'
+      )
+
       await installExtension(VUEJS_DEVTOOLS)
     } catch (e) {
       console.error('Vue Devtools failed to install:', e.toString())
@@ -123,25 +132,6 @@ if (isDevelopment) {
     })
   }
 }
-
-async function initServer () {
-  server = await Server.init({
-    port: parseInt(process.env.SERVER_PORT || '') || (await getPort()),
-    userDataDir: app.getPath('userData'),
-    asarUnpack: app.isPackaged
-      ? __dirname.replace(/\.asar([\\/])/, '.asar.unpacked$1')
-      : undefined,
-    token
-  })
-
-  app.once('before-quit', () => {
-    if (server) {
-      server.cleanup()
-      server = null
-    }
-  })
-}
-initServer()
 
 ipcMain.on('open-url', (ev, msg) => {
   if (win) {

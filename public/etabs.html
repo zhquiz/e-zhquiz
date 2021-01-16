@@ -180,11 +180,12 @@
         const token = searchParams.get('token')
         const preload = searchParams.get('preload')
         const nodeintegration = searchParams.get('nodeIntegration') || 'false'
+        const port = searchParams.get('port') || ''
 
         const tabGroup = new TabGroup()
         tabGroup.addTab({
           title: 'Home',
-          src: `/index.html?token=${token}#` + '/',
+          src: `/index.html?token=${token}&port=${port}#` + '/',
           active: true,
           closable: false,
           webviewAttributes: {
@@ -198,7 +199,7 @@
           if (url.startsWith('/')) {
             tabGroup.addTab({
               title,
-              src: `/index.html?token=${token}#` + url,
+              src: `/index.html?token=${token}&port=${port}#` + url,
               active: true,
               webviewAttributes: {
                 preload,

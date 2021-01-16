@@ -1,4 +1,4 @@
-import { token } from './api'
+import { port, token } from './api'
 
 const allVoices: Record<string, string> = {}
 
@@ -17,9 +17,9 @@ speechSynthesis.onvoiceschanged = () => {
 export async function speak (s: string) {
   if (navigator.onLine) {
     const audio = new Audio(
-      `/api/chinese/speak?q=${encodeURIComponent(s)}&token=${encodeURIComponent(
-        token
-      )}`
+      `http://localhost:${port}/api/chinese/speak?q=${encodeURIComponent(
+        s
+      )}&token=${encodeURIComponent(token)}`
     )
     audio.play()
     return

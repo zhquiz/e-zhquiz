@@ -19,10 +19,11 @@
   },
   "main": "background.js",
   "scripts": {
-    "build": "vue-cli-service electron:build",
     "dev": "SERVER_PORT=5000 vue-cli-service electron:serve",
-    "postinstall": "electron-builder install-app-deps",
+    "build": "vue-cli-service electron:build",
+    "dist": "BUILD_ALL=1 yarn build -wml",
     "lint": "vue-cli-service lint",
+    "postinstall": "electron-builder install-app-deps",
     "postuninstall": "electron-builder install-app-deps"
   },
   "dependencies": {

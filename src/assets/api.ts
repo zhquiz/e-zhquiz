@@ -19,9 +19,13 @@ function encodeURIMin (s: string) {
   return s
 }
 
-export const token = new URL(location.href).searchParams.get('token') || ''
+const { searchParams } = new URL(location.href)
+
+export const token = searchParams.get('token') || ''
+export const port = searchParams.get('port') || ''
 
 export const api = axios.create({
+  baseURL: `http://localhost:${port}`,
   headers: {
     'CSRF-Token': token
   },

@@ -6,7 +6,7 @@ module.exports = {
   },
   pluginOptions: {
     electronBuilder: {
-      externals: ['fastify'],
+      externals: ['fastify', 'electron-tabs'],
       nodeIntegration: true,
       preload: 'src/preload.js',
       builderOptions: {
@@ -24,10 +24,7 @@ module.exports = {
           category: 'public.app-category.education'
         },
         linux: {
-          target: [
-            'AppImage'
-            // 'deb'
-          ],
+          target: ['AppImage', ...(process.env.BUILD_ALL ? ['deb'] : [])],
           icon: 'public/icon.png'
         }
       }

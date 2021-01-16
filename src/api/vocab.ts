@@ -46,6 +46,7 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         SELECT simplified, traditional, pinyin, english
         FROM vocab
         WHERE simplified = ${entry} OR traditional = ${entry}
+        ORDER BY frequency
         `
         )
 
@@ -97,6 +98,7 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           SELECT simplified, traditional, pinyin, english
           FROM vocab
           WHERE simplified LIKE '%'||${q}||'$' OR traditional LIKE '%'||${q}||'%'
+          ORDER BY frequency
           `
         )
 
