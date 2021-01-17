@@ -44,16 +44,6 @@
             >
               Next
             </button>
-
-            <b-dropdown hoverable aria-role="list">
-              <button slot="trigger" class="button">
-                <fontawesome icon="caret-down" />
-              </button>
-
-              <b-dropdown-item aria-role="listitem">
-                Search in MDBG
-              </b-dropdown-item>
-            </b-dropdown>
           </div>
         </div>
 
@@ -300,7 +290,7 @@ export default class VocabPage extends Vue {
             ...this.entries.slice(0, this.i),
             {
               simplified: entry,
-              pinyin: makePinyin(entry, { keepRest: true, toneToNumber: true })
+              pinyin: makePinyin(entry, { keepRest: true })
             },
             ...this.entries.slice(this.i + 1)
           ]

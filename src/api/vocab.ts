@@ -46,7 +46,7 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         SELECT simplified, traditional, pinyin, english
         FROM vocab
         WHERE simplified = ${entry} OR traditional = ${entry}
-        ORDER BY frequency
+        ORDER BY frequency DESC
         `
         )
 
@@ -98,7 +98,7 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           SELECT simplified, traditional, pinyin, english
           FROM vocab
           WHERE simplified LIKE '%'||${q}||'$' OR traditional LIKE '%'||${q}||'%'
-          ORDER BY frequency
+          ORDER BY frequency DESC
           `
         )
 
@@ -205,7 +205,7 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
               sql`
             SELECT [entry]
             FROM quiz
-            WHERE [type] = 'vocab' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL AND source IS NULL
+            WHERE [type] = 'vocab' AND srsLevel IS NOT NULL AND nextReview IS NOT NULL
             `
             )
             .then((rs) => rs.map(({ entry }) => entry))
@@ -213,7 +213,8 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           const where: SQLTemplateString[] = [
             sql`vocab_level >= ${levelMin || 1} AND vocab_level <= ${
               level || 60
-            }`
+            }`,
+            sql`vocab.english IS NOT NULL AND vocab.frequency IS NOT NULL`
           ]
 
           const entriesSet = new Set(entries)
@@ -221,11 +222,11 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           let rs = await g.server.zh
             .all<{ result: string; english: string; level: number }>(
               sql`
-              SELECT [entry] result, (
-                SELECT english FROM vocab WHERE simplified = [entry] ORDER BY frequency DESC
-              ) english, vocab_level [level]
+              SELECT [entry] result, vocab.english english, vocab_level [level]
               FROM token
+              LEFT JOIN vocab ON vocab.simplified = token.entry
               WHERE ${sqlJoin(where, ' AND ')}
+              GROUP BY vocab.simplified
               `
             )
             .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))
@@ -236,11 +237,11 @@ const vocabRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             rs = await g.server.zh
               .all<{ result: string; english: string; level: number }>(
                 sql`
-              SELECT [entry] result, (
-                SELECT english FROM vocab WHERE simplified = [entry] ORDER BY frequency DESC
-              ), english, vocab_level [level]
+              SELECT [entry] result, vocab.english english, vocab_level [level]
               FROM token
+              LEFT JOIN vocab ON vocab.simplified = token.entry
               WHERE ${sqlJoin(where, ' AND ')}
+              GROUP BY vocab.simplified
               `
               )
               .then((rs) => rs.filter(({ result }) => !entriesSet.has(result)))

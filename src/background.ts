@@ -48,7 +48,8 @@ async function createWindow () {
       token,
       preload: pathToFileURL(path.join(__dirname, 'preload.js')),
       nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION,
-      port: server ? server.port : undefined
+      port:
+        !process.env.WEBPACK_DEV_SERVER_URL && server ? server.port : undefined
     })
   )
 

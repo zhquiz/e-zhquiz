@@ -25,7 +25,7 @@ export const token = searchParams.get('token') || ''
 export const port = searchParams.get('port') || ''
 
 export const api = axios.create({
-  baseURL: `http://localhost:${port}`,
+  baseURL: port ? `http://localhost:${port}` : undefined,
   headers: {
     'CSRF-Token': token
   },

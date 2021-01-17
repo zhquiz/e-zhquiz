@@ -17,9 +17,10 @@ speechSynthesis.onvoiceschanged = () => {
 export async function speak (s: string) {
   if (navigator.onLine) {
     const audio = new Audio(
-      `http://localhost:${port}/api/chinese/speak?q=${encodeURIComponent(
-        s
-      )}&token=${encodeURIComponent(token)}`
+      (port ? `http://localhost:${port}` : '') +
+        `/api/chinese/speak?q=${encodeURIComponent(
+          s
+        )}&token=${encodeURIComponent(token)}`
     )
     audio.play()
     return

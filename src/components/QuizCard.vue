@@ -3,7 +3,21 @@
     <div class="card">
       <div v-if="current.id" class="card-content">
         <div v-show="!isQuizShownAnswer" class="content">
-          <div v-if="current.type === 'hanzi'">
+          <div v-if="!!current.source">
+            <div v-if="current.direction === 'ec'">
+              <h4>Extra English-Chinese</h4>
+
+              <div v-html="doMask(current.english, current.entry)"></div>
+            </div>
+            <div v-else>
+              <h4>Extra Chinese-English</h4>
+
+              <div class="font-zh-simp text-w-normal" style="font-size: 2rem">
+                {{ current.entry }}
+              </div>
+            </div>
+          </div>
+          <div v-else-if="current.type === 'hanzi'">
             <div v-if="current.direction === 'ec'">
               <h4>Hanzi English-Chinese</h4>
 
@@ -58,7 +72,7 @@
             </div>
           </div>
 
-          <div v-else-if="current.type === 'sentence'">
+          <div v-else>
             <div v-if="current.direction === 'ec'">
               <h4>Sentence English-Chinese</h4>
 
@@ -72,25 +86,47 @@
               </h2>
             </div>
           </div>
-
-          <div v-else>
-            <div v-if="current.direction === 'ec'">
-              <h4>Extra English-Chinese</h4>
-
-              <div v-html="doMask(current.english, current.entry)"></div>
-            </div>
-            <div v-else>
-              <h4>Extra Chinese-English</h4>
-
-              <div class="font-zh-simp text-w-normal" style="font-size: 2rem">
-                {{ current.entry }}
-              </div>
-            </div>
-          </div>
         </div>
 
         <div v-show="isQuizShownAnswer" class="content">
-          <div v-if="current.type === 'hanzi'">
+          <div v-if="!!current.source">
+            <div
+              class="font-zh-simp text-w-normal has-context"
+              style="font-size: 2rem"
+              @contextmenu.prevent="openContext"
+            >
+              {{ current.entry }}
+            </div>
+
+            <div>
+              {{ current.pinyin }}
+            </div>
+
+            <p>
+              {{ current.english }}
+            </p>
+
+            <ul v-if="current.sentences.length">
+              <li v-for="(it, i) in current.sentences" :key="i">
+                <span
+                  class="has-context"
+                  :title="it.pinyin"
+                  @contextmenu.prevent="
+                    (ev) => openContext(ev, it.chinese, 'sentence')
+                  "
+                >
+                  {{ it.chinese }}
+                </span>
+                <ul>
+                  <li>
+                    {{ it.english }}
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </div>
+
+          <div v-else-if="current.type === 'hanzi'">
             <div
               class="hanzi-display has-context"
               @contextmenu.prevent="openContext"
@@ -161,7 +197,7 @@
             </ul>
           </div>
 
-          <div v-else-if="current.type === 'sentence'">
+          <div v-else>
             <h2
               class="font-zh-simp text-w-normal has-context"
               @contextmenu.prevent="openContext"
@@ -178,43 +214,6 @@
             <ul>
               <li>
                 {{ current.english }}
-              </li>
-            </ul>
-          </div>
-
-          <div v-else>
-            <div
-              class="font-zh-simp text-w-normal has-context"
-              style="font-size: 2rem"
-              @contextmenu.prevent="openContext"
-            >
-              {{ current.entry }}
-            </div>
-
-            <div>
-              {{ current.pinyin }}
-            </div>
-
-            <p>
-              {{ current.english }}
-            </p>
-
-            <ul v-if="current.sentences.length">
-              <li v-for="(it, i) in current.sentences" :key="i">
-                <span
-                  class="has-context"
-                  :title="it.pinyin"
-                  @contextmenu.prevent="
-                    (ev) => openContext(ev, it.chinese, 'sentence')
-                  "
-                >
-                  {{ it.chinese }}
-                </span>
-                <ul>
-                  <li>
-                    {{ it.english }}
-                  </li>
-                </ul>
               </li>
             </ul>
           </div>
@@ -294,13 +293,18 @@
       </div>
     </div>
 
-    <ContextMenu ref="context" :entry="ctxEntry" :type="ctxType" />
+    <ContextMenu
+      ref="context"
+      :entry="ctxEntry"
+      :type="ctxType"
+      :source="ctxSource"
+    />
   </b-modal>
 </template>
 
 <script lang="ts">
 import { Vue, Component, Prop, Ref } from 'vue-property-decorator'
-import makePinyin from 'chinese-to-pinyin'
+import toPinyin from 'chinese-to-pinyin'
 import ContextMenu from './ContextMenu.vue'
 import { api } from '@/assets/api'
 
@@ -331,6 +335,7 @@ export default class QuizCard extends Vue {
 
   ctxEntry = ''
   ctxType = ''
+  ctxSource = ''
 
   isQuizShownAnswer = false
   isQuizItemReady = false
@@ -413,9 +418,7 @@ export default class QuizCard extends Vue {
 
       return {
         ...it,
-        ...this.dictionaryData[type][entry],
-        entry,
-        type
+        ...this.dictionaryData[type][entry]
       }
     })()
 
@@ -442,6 +445,7 @@ export default class QuizCard extends Vue {
   async openContext (ev: MouseEvent, entry?: string, type?: string) {
     this.ctxEntry = entry || this.current.entry || ''
     this.ctxType = type || this.current.type || ''
+    this.ctxSource = entry ? '' : this.current.source
 
     await this.context.open(ev)
   }
@@ -590,7 +594,7 @@ export default class QuizCard extends Vue {
               return result.map((r) => {
                 return {
                   chinese: r.chinese,
-                  pinyin: makePinyin(r.chinese, {
+                  pinyin: toPinyin(r.chinese, {
                     keepRest: true
                   }),
                   english: r.english.split('\x1f')[0]
@@ -619,7 +623,7 @@ export default class QuizCard extends Vue {
             })
             .then(({ data: r }) => {
               return {
-                pinyin: makePinyin(r.chinese, {
+                pinyin: toPinyin(r.chinese, {
                   keepRest: true
                 }),
                 english: r.english.split('\x1f')[0]
@@ -659,7 +663,7 @@ export default class QuizCard extends Vue {
               return result.map((r) => {
                 return {
                   chinese: r.chinese,
-                  pinyin: makePinyin(r.chinese, {
+                  pinyin: toPinyin(r.chinese, {
                     keepRest: true
                   }),
                   english: r.english.split('\x1f')[0]

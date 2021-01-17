@@ -257,7 +257,7 @@ export default class LibraryPage extends Vue {
         this.q
       )}&page=${encodeURIComponent(
         this.online.page
-      )}&perpage=${encodeURIComponent(this.online.perPage)}`
+      )}&perPage=${encodeURIComponent(this.online.perPage)}`
     ).then((r) => r.json())
 
     this.online = {

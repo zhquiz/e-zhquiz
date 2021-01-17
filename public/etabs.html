@@ -183,21 +183,10 @@
         const port = searchParams.get('port') || ''
 
         const tabGroup = new TabGroup()
-        tabGroup.addTab({
-          title: 'Home',
-          src: `/index.html?token=${token}&port=${port}#` + '/',
-          active: true,
-          closable: false,
-          webviewAttributes: {
-            preload,
-            nodeintegration,
-            plugins: ''
-          }
-        })
-
-        ipcRenderer.on('open-url', (evt, { url, title }) => {
+        const openURL = ({ url, title, ...others }) => {
           if (url.startsWith('/')) {
             tabGroup.addTab({
+              ...others,
               title,
               src: `/index.html?token=${token}&port=${port}#` + url,
               active: true,
@@ -210,6 +199,12 @@
           } else {
             shell.openExternal(url)
           }
+        }
+
+        openURL({ title: 'Home', url: '/', closable: false })
+
+        ipcRenderer.on('open-url', (evt, { url, title }) => {
+          openURL({ url, title })
         })
       })()
     </script>
