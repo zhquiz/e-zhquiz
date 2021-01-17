@@ -1,48 +1,42 @@
 {
   "name": "zhquiz",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "main": "lib/index.js",
-  "author": {
-    "email": "polv@polv.cc",
-    "name": "Pacharapol Withayasakpunt",
-    "url": "https://www.polv.cc"
-  },
   "description": "ZhQuiz - Hanzi, Vocab and Sentences quizzing on your local machine, fully offline",
   "homepage": "https://www.zhquiz.cc",
-  "repository": "github:zhquiz/zhquiz",
+  "bugs": {
+    "url": "https://github.com/zhquiz/zhquiz/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhquiz/zhquiz.git"
+  },
   "license": "MIT",
-  "files": [
-    "public/",
-    "lib/",
-    "assets/"
-  ],
+  "author": {
+    "name": "Pacharapol Withayasakpunt",
+    "email": "polv@polv.cc",
+    "url": "https://www.polv.cc"
+  },
+  "main": "background.js",
   "scripts": {
-    "start": "electron .",
+    "dev": "SERVER_PORT=5000 vue-cli-service electron:serve",
+    "build": "vue-cli-service electron:build",
+    "dist": "BUILD_ALL=1 yarn build -wml",
+    "lint": "vue-cli-service lint",
     "postinstall": "electron-builder install-app-deps",
-    "dev": "run-p dev:*",
-    "dev:e": "nodemon src/server.ts",
-    "dev:ui": "cd ../ui && SERVER_PORT=5000 yarn nuxt-ts",
-    "watch": "run-p watch:*",
-    "watch:e": "yarn build:e --watch",
-    "watch:ui": "cd ../ui && IS_ELECTRON=1 yarn build --watch",
-    "build": "run-s 'build:*'",
-    "build:e": "tsc -P src/tsconfig.json",
-    "build:ui": "cd ../ui && IS_ELECTRON=1 yarn build",
-    "predist": "yarn build",
-    "dist": "electron-builder -wml",
-    "ts": "TS_NODE_COMPILER_OPTIONS='{\"noImplicitAny\":false}' electron -r ts-node/register"
+    "postuninstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "array-shuffle": "^2.0.0",
     "axios": "^0.21.1",
     "cheerio": "^1.0.0-rc.5",
     "chinese-to-pinyin": "^1.3.1",
+    "core-js": "^3.6.5",
     "death": "^1.1.0",
     "electron-context-menu": "^2.4.0",
     "electron-tabs": "^0.15.0",
     "fastify": "^3.9.2",
-    "fastify-static": "^3.3.1",
+    "fastify-cors": "^5.1.0",
     "fs-extra": "^9.0.1",
     "get-port": "^5.1.1",
     "id128": "^1.6.3",
@@ -54,44 +48,62 @@
     "pino": "^6.10.0",
     "pino-pretty": "^4.3.0",
     "sqlite3": "^5.0.1",
-    "strip-ansi-stream": "^1.0.0"
+    "strip-ansi-stream": "^1.0.0",
+    "vue": "^2.6.11",
+    "vue-class-component": "^7.2.3",
+    "vue-property-decorator": "^9.1.2",
+    "vue-router": "^3.2.0",
+    "vuex": "^3.4.0"
   },
   "devDependencies": {
+    "@fortawesome/fontawesome-svg-core": "^1.2.34",
+    "@fortawesome/free-brands-svg-icons": "^5.15.2",
+    "@fortawesome/free-solid-svg-icons": "^5.15.2",
+    "@fortawesome/vue-fontawesome": "^2.0.2",
     "@types/cheerio": "^0.22.23",
     "@types/death": "^1.1.1",
+    "@types/electron-devtools-installer": "^2.2.0",
     "@types/fs-extra": "^9.0.6",
     "@types/js-yaml": "^4.0.0",
     "@types/pino": "^6.3.5",
     "@types/sqlite3": "^3.1.6",
-    "electron": "^11.1.1",
+    "@types/xregexp": "^4.3.0",
+    "@typescript-eslint/eslint-plugin": "^2.33.0",
+    "@typescript-eslint/parser": "^2.33.0",
+    "@vue/cli-plugin-babel": "~4.5.0",
+    "@vue/cli-plugin-eslint": "~4.5.0",
+    "@vue/cli-plugin-router": "~4.5.0",
+    "@vue/cli-plugin-typescript": "~4.5.0",
+    "@vue/cli-plugin-vuex": "~4.5.0",
+    "@vue/cli-service": "~4.5.0",
+    "@vue/eslint-config-standard": "^5.1.2",
+    "@vue/eslint-config-typescript": "^5.0.2",
+    "buefy": "^0.9.4",
+    "electron": "^11.2.0",
     "electron-builder": "^22.9.1",
+    "electron-devtools-installer": "^3.1.0",
+    "eslint": "^6.7.2",
+    "eslint-plugin-import": "^2.20.2",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "eslint-plugin-standard": "^4.0.0",
+    "eslint-plugin-vue": "^6.2.2",
     "import-sort-parser-typescript": "^6.0.0",
     "nodemon": "^2.0.7",
     "npm-run-all": "^4.1.5",
     "prettier": "^2.2.1",
-    "ts-node": "^9.1.1",
-    "typescript": "^4.1.3",
-    "wait-on": "^5.2.1"
+    "sass": "^1.26.5",
+    "sass-loader": "^8.0.2",
+    "typed-vuex": "^0.1.22",
+    "vue-cli-plugin-electron-builder": "~2.0.0-rc.5",
+    "vue-context": "^6.0.0",
+    "vue-template-compiler": "^2.6.11",
+    "xregexp": "^4.4.1"
   },
   "importSort": {
     ".js, .ts": {
       "parser": "typescript",
       "style": "module"
-    }
-  },
-  "nodemonConfig": {
-    "watch": [
-      "src/*"
-    ],
-    "ignore": [
-      "**/*.d.ts"
-    ],
-    "delay": "1000",
-    "execMap": {
-      "ts": "electron -r ts-node/register --debug"
-    },
-    "env": {
-      "TS_NODE_COMPILER_OPTIONS": "{\"noImplicitAny\":false}"
     }
   }
 }

@@ -35,6 +35,10 @@ const apiRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     prefix: '/vocab'
   })
 
+  f.get('/config', async () => {
+    return {}
+  })
+
   next()
 }
 

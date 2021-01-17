@@ -5,7 +5,7 @@ import { DbSentence } from './sentence'
 import { DbUser } from './user'
 
 export class Database {
-  static async init() {
+  static async init () {
     await DbUser.init()
     await DbExtra.init()
     await DbLibrary.init()

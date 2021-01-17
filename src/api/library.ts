@@ -25,7 +25,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/q',
       {
@@ -64,7 +64,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             FROM library
             ${
               q
-                ? /* sql */ `LEFT JOIN library_q ON library_q.id = library.id`
+                ? /* sql */ 'LEFT JOIN library_q ON library_q.id = library.id'
                 : undefined
             }
             WHERE ${sqlJoin(where, ' AND ') || sql`TRUE`}
@@ -103,7 +103,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.put<{
-      Body: typeof sBody.type
+      Body: typeof sBody.type;
     }>(
       '/',
       {
@@ -117,6 +117,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         )
 
         return {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           id: r!.entry.id
         }
       }
@@ -141,8 +142,8 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.patch<{
-      Querystring: typeof sQuerystring.type
-      Body: typeof sBody.type
+      Querystring: typeof sQuerystring.type;
+      Body: typeof sBody.type;
     }>(
       '/',
       {
@@ -181,7 +182,7 @@ const libraryRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.delete<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {

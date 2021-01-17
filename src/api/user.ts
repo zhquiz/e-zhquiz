@@ -23,7 +23,7 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     const sResponse = S.object().additionalProperties(true)
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {
@@ -39,6 +39,7 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const sel = select
           .split(',')
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           .map((s) => selMap[s.trim()]!)
           .filter((s) => s)
 
@@ -74,7 +75,7 @@ const userRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.patch<{
-      Body: typeof sBody.type
+      Body: typeof sBody.type;
     }>(
       '/',
       {

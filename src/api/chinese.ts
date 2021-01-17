@@ -14,7 +14,7 @@ const chineseRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/jieba',
       {
@@ -41,7 +41,7 @@ const chineseRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     const gtts = Text2Speech('zh')
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/speak',
       {

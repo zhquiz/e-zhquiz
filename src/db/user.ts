@@ -27,7 +27,7 @@ export const sDbUserMeta = S.shape({
 export type IDbUserMeta = typeof sDbUserMeta.type
 
 export class DbUser {
-  static async init() {
+  static async init () {
     await g.server.db.exec(sql`
       CREATE TABLE IF NOT EXISTS [user] (
         id          INT PRIMARY KEY DEFAULT 1,

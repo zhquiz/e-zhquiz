@@ -20,7 +20,7 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {
@@ -35,9 +35,9 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const { entry } = req.query
 
         const r = await g.server.zh.get<{
-          chinese: string
-          pinyin: string
-          english: string
+          chinese: string;
+          pinyin: string;
+          english: string;
         }>(sql`
           SELECT chinese, pinyin, english
           FROM sentence
@@ -78,10 +78,10 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
       async (): Promise<typeof sResponse.type> => {
         const { sentenceMin, sentenceMax, level, levelMin } =
           (await g.server.db.get<{
-            sentenceMin: number | null
-            sentenceMax: number | null
-            level: number | null
-            levelMin: number | null
+            sentenceMin: number | null;
+            sentenceMax: number | null;
+            level: number | null;
+            levelMin: number | null;
           }>(
             sql`
             SELECT
@@ -175,7 +175,7 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/q',
       {
@@ -191,10 +191,10 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const { sentenceMin, sentenceMax, level, levelMin } =
           (await g.server.db.get<{
-            sentenceMin: number | null
-            sentenceMax: number | null
-            level: number | null
-            levelMin: number | null
+            sentenceMin: number | null;
+            sentenceMax: number | null;
+            level: number | null;
+            levelMin: number | null;
           }>(
             sql`
             SELECT
@@ -233,8 +233,8 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
           )) || {}
 
         const result: {
-          chinese: string
-          english: string
+          chinese: string;
+          english: string;
         }[] = await g.server.zh.all<{ chinese: string; english: string }>(
           sql`
           SELECT chinese, english FROM sentence
@@ -246,8 +246,8 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         if (generate && result.length < generate) {
           const additional = await g.server.db.all<{
-            chinese: string
-            english: string
+            chinese: string;
+            english: string;
           }>(sql`
             SELECT chinese, english FROM sentence
             WHERE ${sqlJoin(where.slice(1), ' AND ') || sql`TRUE`}
@@ -258,8 +258,8 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
           if (result.length < generate) {
             let scraped: {
-              chinese: string
-              english: string
+              chinese: string;
+              english: string;
             }[] = []
 
             const html = await axios
@@ -272,13 +272,13 @@ const sentenceRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
             const $ = cheerio.load(html)
 
             $('table tr.c td:last-child').each((i, el) => {
-              const obj = scraped[i] || ({} as any)
+              const obj = scraped[i] || {}
               obj.chinese = $(el).text()
               scraped[i] = obj
             })
 
             $('table tr.e td:last-child').each((i, el) => {
-              const obj = scraped[i] || ({} as any)
+              const obj = scraped[i] || {}
               obj.english = $(el).text()
             })
 

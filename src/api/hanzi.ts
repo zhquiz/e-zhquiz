@@ -19,7 +19,7 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
     })
 
     f.get<{
-      Querystring: typeof sQuerystring.type
+      Querystring: typeof sQuerystring.type;
     }>(
       '/',
       {
@@ -34,11 +34,11 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
         const { entry } = req.query
 
         const r = await g.server.zh.get<{
-          sub: string | null
-          sup: string | null
-          variants: string | null
-          pinyin: string | null
-          english: string | null
+          sub: string | null;
+          sup: string | null;
+          variants: string | null;
+          pinyin: string | null;
+          english: string | null;
         }>(
           sql`
           SELECT
@@ -102,8 +102,8 @@ const hanziRouter = (f: FastifyInstance, _: unknown, next: () => void) => {
 
         const { level, levelMin } =
           (await g.server.db.get<{
-            level: number | null
-            levelMin: number | null
+            level: number | null;
+            levelMin: number | null;
           }>(
             sql`
             SELECT

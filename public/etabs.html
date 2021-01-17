@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="script-src 'unsafe-inline' 'self'"
+    />
+
+    <title>ZhQuiz - Hanzi, Vocab and Sentences quizzing</title>
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      .etabs-tabgroup {
+        width: 100%;
+        height: 32px;
+        background-color: #ccc;
+        cursor: default;
+        font: caption;
+        font-size: 14px;
+        -webkit-user-select: none;
+        user-select: none;
+        display: none;
+      }
+
+      .etabs-tabgroup.visible {
+        display: block;
+      }
+
+      .etabs-tab {
+        display: none;
+        position: relative;
+        color: #333;
+        height: 22px;
+        padding: 6px 8px 4px;
+        border: 1px solid #aaa;
+        border-bottom: none;
+        border-left: none;
+        background: linear-gradient(
+          to bottom,
+          rgba(234, 234, 234, 1) 0%,
+          rgba(204, 204, 204, 1) 100%
+        );
+        font: caption;
+        font-size: 14px;
+        background-color: #ccc;
+        cursor: default;
+      }
+
+      /* Dragula */
+      .etabs-tab.gu-mirror {
+        padding-bottom: 0;
+      }
+
+      .etabs-tab:first-child {
+        border-left: none;
+      }
+
+      .etabs-tab.visible {
+        display: block;
+        float: left;
+      }
+
+      .etabs-tab.active {
+        background: #fff;
+      }
+
+      .etabs-tab.flash {
+        background: linear-gradient(
+          to bottom,
+          rgba(255, 243, 170, 1) 0%,
+          rgba(255, 227, 37, 1) 100%
+        );
+      }
+
+      .etabs-buttons {
+        float: left;
+      }
+
+      .etabs-buttons button {
+        float: left;
+        color: #333;
+        background: none;
+        border: none;
+        font-size: 12px;
+        margin-top: 6px;
+        border-radius: 2px;
+        margin-left: 4px;
+        width: 20px;
+        text-align: center;
+        padding: 4px 0;
+      }
+
+      .etabs-buttons button:hover {
+        color: #eee;
+        background-color: #aaa;
+      }
+
+      .etabs-tab-badge {
+        position: absolute;
+        right: 0;
+        top: -7px;
+        background: red;
+        border-radius: 100%;
+        text-align: center;
+        font-size: 10px;
+        padding: 0 5px;
+      }
+
+      .etabs-tab-badge.hidden {
+        display: none;
+      }
+
+      .etabs-tab-icon {
+        display: inline-block;
+        height: 16px;
+      }
+
+      .etabs-tab-icon img {
+        max-width: 16px;
+        max-height: 16px;
+      }
+
+      .etabs-tab-title {
+        display: inline-block;
+        margin-left: 10px;
+      }
+
+      .etabs-tab-buttons {
+        display: inline-block;
+        margin-left: 10px;
+      }
+
+      .etabs-tab-buttons button {
+        display: inline-block;
+        color: #333;
+        background: none;
+        border: none;
+        width: 20px;
+        text-align: center;
+        border-radius: 2px;
+      }
+
+      .etabs-tab-buttons button:hover {
+        color: #eee;
+        background-color: #aaa;
+      }
+
+      .etabs-views {
+        position: relative;
+        border-top: 1px solid #aaa;
+        height: calc(100vh - 33px);
+      }
+
+      .etab-view {
+        position: relative;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="etabs-tabgroup">
+      <div class="etabs-tabs"></div>
+      <div class="etabs-buttons"></div>
+    </div>
+    <div class="etabs-views"></div>
+
+    <script type="module">
+      ;(function () {
+        const TabGroup = require('electron-tabs')
+        const { shell, ipcRenderer } = require('electron')
+
+        const { searchParams } = new URL(location.href)
+
+        const token = searchParams.get('token')
+        const preload = searchParams.get('preload')
+        const nodeintegration = searchParams.get('nodeIntegration') || 'false'
+        const port = searchParams.get('port') || ''
+
+        const tabGroup = new TabGroup()
+        const openURL = ({ url, title, ...others }) => {
+          if (url.startsWith('/')) {
+            tabGroup.addTab({
+              ...others,
+              title,
+              src: `/index.html?token=${token}&port=${port}#` + url,
+              active: true,
+              webviewAttributes: {
+                preload,
+                nodeintegration,
+                plugins: ''
+              }
+            })
+          } else {
+            shell.openExternal(url)
+          }
+        }
+
+        openURL({ title: 'Home', url: '/', closable: false })
+
+        ipcRenderer.on('open-url', (evt, { url, title }) => {
+          openURL({ url, title })
+        })
+      })()
+    </script>
+  </body>
+</html>

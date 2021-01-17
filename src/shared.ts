@@ -5,7 +5,7 @@ import type { Server } from './server'
 class GlobalObject {
   server!: Server
 
-  getPath(...ps: string[]) {
+  getPath (...ps: string[]) {
     return path.join(__dirname, '..', ...ps)
   }
 }
